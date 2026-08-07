@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS tenants (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    contact TEXT NOT NULL,
+    room_id INTEGER NOT NULL REFERENCES rooms(id) ON DELETE RESTRICT,
+    move_in_date TEXT NOT NULL,
+    due_date TEXT NOT NULL
+);

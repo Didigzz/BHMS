@@ -1,0 +1,1 @@
+ALTER TABLE tenants ADD COLUMN advance_months INTEGER NOT NULL DEFAULT 0;

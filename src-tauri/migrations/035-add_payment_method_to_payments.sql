@@ -1,0 +1,1 @@
+ALTER TABLE payments ADD COLUMN method TEXT NOT NULL DEFAULT 'cash';

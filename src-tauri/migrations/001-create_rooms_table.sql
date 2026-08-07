@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS rooms (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_number TEXT NOT NULL UNIQUE,
+    capacity INTEGER NOT NULL,
+    monthly_rate REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Vacant'
+);
