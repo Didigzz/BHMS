@@ -10,21 +10,20 @@ function d(y: number, mo: number, day: number): Date {
 }
 
 describe("getPaymentStatus — legacy fallback (no recorded payment)", () => {
-  it("is red on the due date and within the 2-day overdue grace", () => {
-    expect(getPaymentStatus("2026-08-05", d(2026, 8, 5))).toBe("red");
-    expect(getPaymentStatus("2026-08-05", d(2026, 8, 6))).toBe("red");
-    expect(getPaymentStatus("2026-08-05", d(2026, 8, 7))).toBe("red");
+  it("is green until the due date has passed, plus the 2-day grace", () => {
+    // A brand-new tenant (due = move-in day, first-payment-month-spec) is
+    // current the moment they're created — nothing is overdue yet.
+    expect(getPaymentStatus("2026-08-05", d(2026, 8, 5))).toBe("green"); // the due day
+    expect(getPaymentStatus("2026-08-05", d(2026, 8, 3))).toBe("green"); // before
+    expect(getPaymentStatus("2026-08-05", d(2026, 8, 7))).toBe("green"); // 2-day grace
   });
 
-  it("is green within the 15-day recently-paid window after the grace", () => {
-    expect(getPaymentStatus("2026-08-05", d(2026, 8, 8))).toBe("green");
-    expect(getPaymentStatus("2026-08-05", d(2026, 8, 20))).toBe("green");
-  });
-
-  it("turns yellow past the recently-paid window, before the next due date", () => {
-    expect(getPaymentStatus("2026-08-05", d(2026, 8, 21))).toBe("yellow");
-    // Before this month's due date, the previous occurrence is the anchor.
-    expect(getPaymentStatus("2026-08-05", d(2026, 8, 3))).toBe("yellow");
+  it("is red once the due date has passed beyond the grace window", () => {
+    expect(getPaymentStatus("2026-08-05", d(2026, 8, 8))).toBe("red");
+    expect(getPaymentStatus("2026-08-05", d(2026, 8, 20))).toBe("red");
+    expect(getPaymentStatus("2026-08-05", d(2026, 8, 21))).toBe("red");
+    // Overdue does not reset at the next month's day-of-month anchor.
+    expect(getPaymentStatus("2026-08-05", d(2026, 9, 6))).toBe("red");
   });
 
   it("clamps a day-of-month that does not exist in the reference month (Aug 31 → Sep 30)", () => {
@@ -37,13 +36,13 @@ describe("getPaymentStatus — legacy fallback (no recorded payment)", () => {
 
   it("falls back to the legacy heuristic when lastPaidDate is set but unparseable", () => {
     // A non-empty garbage lastPaidDate must not break the status chain — it
-    // silently falls through to the day-of-month heuristic.
-    expect(getPaymentStatus("2026-08-05", d(2026, 8, 5), "garbage")).toBe("red");
-    expect(getPaymentStatus("2026-08-05", d(2026, 8, 20), "garbage")).toBe("green");
+    // silently falls through to the due-date comparison.
+    expect(getPaymentStatus("2026-08-05", d(2026, 8, 5), "garbage")).toBe("green");
+    expect(getPaymentStatus("2026-08-05", d(2026, 8, 20), "garbage")).toBe("red");
   });
 });
 
-describe("getPaymentStatus — mark-as-paid cycle", () => {
+describe("getPaymentStatus — record-payment cycle", () => {
   // Marked paid on Aug 5 → due date rolled to Sep 5. Stays green for the
   // first half of the paid span (max(RECENT_PAID_DAYS, span/2) = 16 days).
   const due = "2026-09-05";
@@ -86,13 +85,19 @@ describe("paymentLabel", () => {
     expect(paymentLabel("green", "not-a-date")).toBe("No due date");
   });
 
-  it("labels green as Paid", () => {
-    expect(paymentLabel("green", "2026-08-05", d(2026, 8, 5))).toBe("Paid");
+  it("labels green as Paid for tenants with a payment, Current for unpaid tenants", () => {
+    expect(paymentLabel("green", "2026-08-05", d(2026, 8, 5))).toBe("Current");
+    expect(paymentLabel("green", "2026-08-05", d(2026, 8, 5), "2026-07-05")).toBe("Paid");
   });
 
   it("labels red as Due today on the due date, else overdue days", () => {
     expect(paymentLabel("red", "2026-08-05", d(2026, 8, 5))).toBe("Due today");
     expect(paymentLabel("red", "2026-08-05", d(2026, 8, 7))).toBe("Overdue 2d");
+  });
+
+  it("measures unpaid overdue from the stored due date (does not reset each month)", () => {
+    // Overdue since Aug 5: on Sep 6 the count is 32 days, not 1.
+    expect(paymentLabel("red", "2026-08-05", d(2026, 9, 6))).toBe("Overdue 32d");
   });
 
   it("measures red from the exact stored due date for paid tenants", () => {

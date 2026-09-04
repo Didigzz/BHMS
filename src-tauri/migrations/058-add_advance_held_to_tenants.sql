@@ -1,0 +1,1 @@
+ALTER TABLE tenants ADD COLUMN advance_held REAL NOT NULL DEFAULT 0;

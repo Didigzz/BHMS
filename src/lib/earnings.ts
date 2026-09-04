@@ -28,6 +28,8 @@ export interface EarningsPayment {
   tenant_id: number;
   amount: number;
   covers_month: string | null; // "YYYY-MM"
+  /** Covered due date ("YYYY-MM-DD") of due-date-model payments (new style). */
+  due_date?: string | null;
 }
 
 export interface EarningsRow {
@@ -35,6 +37,8 @@ export interface EarningsRow {
   /** Sum of payments covering this month for the tenant. */
   collected: number;
   paid: boolean;
+  /** Covered due date of the tenant's payment(s) in this month (new-style rows). */
+  paidDueDate: string | null;
 }
 
 export interface MonthSummary {
@@ -99,12 +103,17 @@ export function computeMonthSummary(
   // Only payments belonging to active tenants count toward the month (a
   // stray payment for an excluded tenant must not inflate collected).
   const collectedByTenant = new Map<number, number>();
+  const paidDueDateByTenant = new Map<number, string | null>();
   for (const payment of payments) {
     if (payment.covers_month !== month || !activeIds.has(payment.tenant_id)) continue;
     collectedByTenant.set(
       payment.tenant_id,
       round2((collectedByTenant.get(payment.tenant_id) ?? 0) + payment.amount),
     );
+    // Latest covered due date for the month (drives the breakdown's "Due" label).
+    const due = payment.due_date ?? null;
+    const prev = paidDueDateByTenant.get(payment.tenant_id) ?? null;
+    if (due && (!prev || due > prev)) paidDueDateByTenant.set(payment.tenant_id, due);
   }
 
   const rows: EarningsRow[] = active
@@ -112,7 +121,12 @@ export function computeMonthSummary(
       const collected = collectedByTenant.get(tenant.id) ?? 0;
       // Small epsilon keeps float drift from flipping the paid flag; a real
       // underpayment still counts as unpaid.
-      return { tenant, collected, paid: collected >= tenant.rate - 0.005 };
+      return {
+        tenant,
+        collected,
+        paid: collected >= tenant.rate - 0.005,
+        paidDueDate: paidDueDateByTenant.get(tenant.id) ?? null,
+      };
     })
     .sort((a, b) => a.tenant.name.localeCompare(b.tenant.name));
 

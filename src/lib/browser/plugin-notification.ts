@@ -1,6 +1,6 @@
 /**
  * Browser-preview shim for `@tauri-apps/plugin-notification` (only wired when
- * `DIGAL_PREVIEW=1`). Maps to the Web Notification API and records deliveries
+ * `RENTEASE_PREVIEW=1`). Maps to the Web Notification API and records deliveries
  * on `window.__shim.lastNotification` for test assertions.
  */
 

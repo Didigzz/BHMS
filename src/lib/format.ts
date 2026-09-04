@@ -33,6 +33,16 @@ export function phpPesoPrecise(amount: number): string {
   return phpPesoPreciseFormatter.format(amount);
 }
 
+/**
+ * Render a room's display label with exactly one "Room" prefix. Room numbers
+ * are free-form ("101", "Room 101", "Annex B"), so when a stored value
+ * already includes the prefix (as the Room form placeholder suggests), never
+ * duplicate it: "Room 101" → "Room 101", "101" → "Room 101".
+ */
+export function roomLabel(room_number: string): string {
+  return /^room\b/i.test(room_number) ? room_number : `Room ${room_number}`;
+}
+
 /* ------------------------------------------------------------------ *
  * Month-key helpers ("YYYY-MM"). Shared by payments, receipts, and
  * the Earnings page so month math and labels agree everywhere.
@@ -68,4 +78,14 @@ export function formatMonthRange(first: string | null, last: string | null): str
   if (!first) return "—";
   if (!last || first === last) return formatMonthKey(first);
   return `${formatMonthKey(first)} – ${formatMonthKey(last)}`;
+}
+
+/**
+ * True when a payment row uses the new due-date model (payment-due-date-spec):
+ * `due_date` IS the specific covered due date, so its month equals
+ * `covers_month`. Legacy rows store the running "new due" (one month past the
+ * covered month) instead, so receipt/history displays can tell them apart.
+ */
+export function isDueDatePayment(row: { due_date: string; covers_month: string | null }): boolean {
+  return !!row.covers_month && monthKeyOf(row.due_date) === row.covers_month;
 }

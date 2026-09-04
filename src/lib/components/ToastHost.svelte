@@ -99,10 +99,17 @@
     border-color: rgba(26, 92, 200, 0.2);
   }
 
+  /* Guarded by the :root data-theme override (src/lib/theme.ts) in addition
+     to the OS setting. */
+  :global(:root[data-theme="dark"]) .toast-success,
+  :global(:root[data-theme="dark"]) .toast-error,
+  :global(:root[data-theme="dark"]) .toast-info {
+    border-color: transparent;
+  }
   @media (prefers-color-scheme: dark) {
-    .toast-success,
-    .toast-error,
-    .toast-info {
+    :global(:root:not([data-theme="light"])) .toast-success,
+    :global(:root:not([data-theme="light"])) .toast-error,
+    :global(:root:not([data-theme="light"])) .toast-info {
       border-color: transparent;
     }
   }

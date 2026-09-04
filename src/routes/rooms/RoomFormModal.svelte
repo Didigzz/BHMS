@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { modalMaterial } from "$lib/motion";
+  import { pushOverlay } from "$lib/back-stack";
   import type { Room, RoomFormState } from "./types";
 
   let {
@@ -53,12 +54,14 @@
     if (String(form.monthly_rate).trim() === "" || Number.isNaN(rate) || rate < 0) {
       return "Monthly rate must be 0 or more.";
     }
-    // Shrinking capacity below the current headcount strands tenants in an
-    // over-capacity room (the DB only guards tenant inserts) — block it.
+    // Shrinking capacity below the currently occupied beds strands tenants in
+    // an over-capacity room (the DB only guards tenant inserts) — block it.
+    // A tenant occupying N beds needs N slots, so the guard compares against
+    // the summed beds, not the head count.
     if (form.id !== null) {
       const existing = rooms.find((r) => r.id === form.id);
-      if (existing && capacity < existing.tenant_count) {
-        return `Capacity can't be less than the ${existing.tenant_count} current tenant${existing.tenant_count === 1 ? "" : "s"} in this room.`;
+      if (existing && capacity < existing.occupied_beds) {
+        return `Capacity can't be less than the ${existing.occupied_beds} bed${existing.occupied_beds === 1 ? "" : "s"} currently occupied in this room.`;
       }
     }
     return null;
@@ -79,13 +82,20 @@
       saving = false;
     }
   }
+
+  // Android back button closes this modal (same path as Cancel) instead of
+  // letting the WebView navigate its history.
+  onMount(() => {
+    const unregister = pushOverlay(onClose);
+    return unregister;
+  });
 </script>
 
 <div class="modal" role="dialog" aria-label="Room form" transition:modalMaterial>
   <form class="room-form" onsubmit={(e) => { e.preventDefault(); submit(); }}>
     <h2>{form.id === null ? "Add Room" : "Edit Room"}</h2>
 
-    <label>
+    <label class="span-2">
       Room number / name
       <input type="text" placeholder="e.g. Room 101" bind:value={form.room_number} />
     </label>
@@ -100,22 +110,22 @@
       <input type="number" min="0" step="0.01" placeholder="e.g. 2500" bind:value={form.monthly_rate} />
     </label>
 
-    <p class="form-note">
+    <p class="form-note span-2">
       Status is automatic: <strong>Occupied</strong> when tenants are assigned,
       <strong>Reserved</strong> when the room is held, <strong>Vacant</strong> when free.
       The rate is the default for new tenants — existing tenants keep their own rate.
     </p>
 
-    <label class="checkbox-label">
+    <label class="checkbox-label span-2">
       <input type="checkbox" bind:checked={form.maintenance} />
       Mark as unavailable (maintenance)
     </label>
 
     {#if formError}
-      <p class="form-error">{formError}</p>
+      <p class="form-error span-2">{formError}</p>
     {/if}
 
-    <div class="form-actions">
+    <div class="form-actions span-2">
       <button type="button" class="btn" onclick={onClose} disabled={saving}>Cancel</button>
       <button type="submit" class="btn btn-primary" disabled={saving}>Save</button>
     </div>
@@ -124,14 +134,18 @@
 
 <style>
   /* ---- form ---- */
+  /* Two-up field grid that collapses to one column on narrow windows. Fields
+     are grouped in logical pairs; anything needing full width (Room name, the
+     note, the checkbox, errors, actions) spans both columns. */
   .room-form {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
     gap: 12px;
   }
 
   .room-form h2 {
-    margin: 0 0 4px;
+    grid-column: 1 / -1;
+    margin: 0;
     font-size: 1.2rem;
   }
 
@@ -139,12 +153,20 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+    min-width: 0;
     font-weight: 600;
     font-size: 0.85rem;
     color: var(--label-2);
   }
 
-  .room-form input {
+  .room-form label.span-2 {
+    grid-column: 1 / -1;
+  }
+
+  .room-form input:not([type="checkbox"]) {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     border-radius: 10px;
     border: 1px solid var(--separator);
     padding: 10px 12px;
@@ -177,6 +199,7 @@
   .form-note {
     margin: 0;
     font-size: 0.85rem;
+    line-height: 1.45;
     color: var(--label-2);
     background: var(--fill);
     border: 1px solid var(--separator);

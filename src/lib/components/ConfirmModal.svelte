@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { modalMaterial } from "$lib/motion";
+  import { pushOverlay } from "$lib/back-stack";
 
   /**
    * Shared confirmation dialog — the app-wide pattern for any action that
@@ -48,6 +50,12 @@
     if (busy) return;
     onClose();
   }
+
+  // Android back button closes this modal instead of navigating away.
+  onMount(() => {
+    const unregister = pushOverlay(close);
+    return unregister;
+  });
 </script>
 
 <div class="modal" role="dialog" aria-modal="true" aria-label={title} transition:modalMaterial>

@@ -18,8 +18,8 @@ import { formatDate, phpPeso } from "./format";
  *                     due (missed pings catch up to the most severe level, so
  *                     reopening the app late sends one ping, not three)
  *
- * Advancing the due date via Mark-as-Paid changes the `due_date` used in the
- * de-dupe key, which naturally re-arms the reminder for the next cycle.
+ * Advancing the due date via Record Payment changes the `due_date` used in
+ * the de-dupe key, which naturally re-arms the reminder for the next cycle.
  *
  * The dashboard's in-app summary always shows due/overdue tenants regardless
  * of OS permission — this function only *adds* OS notifications on top.

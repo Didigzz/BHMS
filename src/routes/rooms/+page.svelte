@@ -1,13 +1,15 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { goto } from "$app/navigation";
   import { getDb } from "$lib/db";
   import { ROOM_STATUS_SQL } from "$lib/room-status";
   import { getPaymentStatus } from "$lib/payment-status";
   import { pushToast } from "$lib/toast.svelte";
   import RoomFormModal from "./RoomFormModal.svelte";
   import RoomCard from "./RoomCard.svelte";
+  import RoomDetailSheet from "$lib/components/RoomDetailSheet.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
-  import type { Room, RoomFilter, RoomFormState, RoomTenant } from "./types";
+  import type { Room, RoomFilter, RoomFormState, RoomTenant, RoomTenantChip } from "./types";
 
   const FILTERS: { key: RoomFilter; label: string }[] = [
     { key: "all", label: "All" },
@@ -22,6 +24,9 @@
   let loading = $state(true);
   let error: string | null = $state(null);
   let statusFilter = $state<RoomFilter>("all");
+
+  // Boarder detail sheet — which room's boarders are on display (read-only).
+  let detailRoom: Room | null = $state(null);
 
   // Rooms with at least one active tenant whose payment status is red.
   const overdueRoomIds = $derived(
@@ -40,6 +45,22 @@
     })
   );
 
+  // Payment-tinted boarder chips per room, shown on each room card.
+  const chipsByRoom = $derived(
+    roomTenants.reduce<Map<number, RoomTenantChip[]>>((map, t) => {
+      const chips = map.get(t.room_id) ?? [];
+      chips.push({
+        id: t.id,
+        name: t.name,
+        dueDate: t.due_date,
+        lastPaidDate: t.last_paid_date,
+        status: getPaymentStatus(t.due_date, new Date(), t.last_paid_date),
+      });
+      map.set(t.room_id, chips);
+      return map;
+    }, new Map())
+  );
+
   // ----- form state -----
   let editingRoom: Room | null = $state(null);
   let formOpen = $state(false);
@@ -56,16 +77,24 @@
       const db = await getDb();
       rooms = await db.select<Room[]>(
         `SELECT r.id, r.room_number, r.capacity, r.monthly_rate, r.maintenance, ${ROOM_STATUS_SQL} AS status,
-                (SELECT COUNT(*) FROM tenants t WHERE t.room_id = r.id AND t.moved_out_date IS NULL) AS tenant_count,
+                COALESCE((SELECT SUM(t.beds_occupied) FROM tenants t WHERE t.room_id = r.id AND t.moved_out_date IS NULL), 0) AS occupied_beds,
                 (SELECT COUNT(*) FROM reservations x WHERE x.room_id = r.id AND x.status = 'active') AS reservation_count,
-                (SELECT COUNT(*) FROM reservations x WHERE x.room_id = r.id AND x.status = 'active' AND x.scope = 'slot') AS slot_holds,
-                (SELECT x.name FROM reservations x WHERE x.room_id = r.id AND x.status = 'active' LIMIT 1) AS reservation_name,
-                (SELECT x.scope FROM reservations x WHERE x.room_id = r.id AND x.status = 'active' LIMIT 1) AS reservation_scope
+                COALESCE((SELECT SUM(x.bed_count) FROM reservations x WHERE x.room_id = r.id
+                          AND x.status = 'active' AND x.hold_type IN ('bed','custom')), 0) AS held_beds,
+                EXISTS(SELECT 1 FROM reservations x WHERE x.room_id = r.id
+                       AND x.status = 'active' AND x.hold_type = 'whole') AS has_whole_hold,
+                (SELECT x.name FROM reservations x WHERE x.room_id = r.id
+                 AND x.status = 'active' AND x.hold_type = 'whole' LIMIT 1) AS whole_hold_name
          FROM rooms r ORDER BY r.id`
       );
       roomTenants = await db.select<RoomTenant[]>(
-        "SELECT room_id, due_date, last_paid_date FROM tenants WHERE moved_out_date IS NULL"
+        "SELECT id, name, room_id, due_date, last_paid_date FROM tenants WHERE moved_out_date IS NULL"
       );
+      // If the room being inspected vanished (deleted elsewhere), drop the sheet.
+      const inspected = detailRoom;
+      if (inspected && !rooms.some((r) => r.id === inspected.id)) {
+        detailRoom = null;
+      }
     } catch (e) {
       error = `Failed to load rooms: ${String(e)}`;
     } finally {
@@ -120,8 +149,8 @@
   }
 
   async function remove(room: Room) {
-    if (room.tenant_count > 0) {
-      reportError(`Cannot delete ${room.room_number}: it has ${room.tenant_count} tenant${room.tenant_count === 1 ? "" : "s"} assigned. Move them first.`);
+    if (room.occupied_beds > 0) {
+      reportError(`Cannot delete ${room.room_number}: it has ${room.occupied_beds} bed${room.occupied_beds === 1 ? "" : "s"} occupied. Move them out first.`);
       return;
     }
     if (room.reservation_count > 0) {
@@ -206,6 +235,10 @@
     />
   {/if}
 
+  {#if detailRoom}
+    <RoomDetailSheet room={detailRoom} onClose={() => (detailRoom = null)} />
+  {/if}
+
   {#if !loading}
     <div class="chips" role="tablist" aria-label="Room status filter">
       {#each FILTERS as f (f.key)}
@@ -231,8 +264,11 @@
         <RoomCard
           room={room}
           overdue={overdueRoomIds.has(room.id)}
+          tenants={chipsByRoom.get(room.id) ?? []}
+          onView={(r) => (detailRoom = r)}
           onEdit={openEdit}
           onDelete={remove}
+          onManageTenants={(r) => goto(`/tenants?room=${r.id}`)}
         />
       {/each}
     </ul>
@@ -250,9 +286,13 @@
   }
 
   /* Rooms renders its placeholder text slightly dimmer than the global .muted —
-     light mode only, so dark mode falls through to the global #b0b0b0. */
+     light mode only (explicit or device-driven), so dark mode falls through
+     to the global label-2. Guarded by the :root data-theme override. */
+  :global(:root[data-theme="light"]) .muted {
+    color: var(--label-3);
+  }
   @media (prefers-color-scheme: light) {
-    .muted {
+    :global(:root:not([data-theme="dark"])) .muted {
       color: var(--label-3);
     }
   }

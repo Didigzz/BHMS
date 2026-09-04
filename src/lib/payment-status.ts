@@ -4,18 +4,18 @@ export const STATUS_CONFIG = {
   // Days after the due date during which the tenant is still considered
   // "recently paid" (green) — assumes payment happens at the due date.
   RECENT_PAID_DAYS: 15,
-  // Days after the due date that count as overdue (red) — the payment
-  // "has passed" and is unpaid.
+  // Days past the due date that an unpaid tenant stays green — a short grace
+  // window before the payment "has passed" and counts as overdue.
   OVERDUE_GRACE_DAYS: 2,
 } as const;
 
 /**
  * Compute payment status for a tenant based on their monthly due date and
- * the last date they were marked as paid.
+ * the last date they had a payment recorded.
  *
  * The stored `dueDate` is the NEXT upcoming due date (a monthly anchor,
  * e.g. "2026-08-05" = rent due on the 5th of every month). When the
- * landlord marks a tenant as paid, `dueDate` advances by one month and
+ * landlord records a payment, `dueDate` advances by one month and
  * `lastPaidDate` records that payment, which resets the cycle to GREEN.
  *
  * Status rules:
@@ -23,9 +23,10 @@ export const STATUS_CONFIG = {
  *            to the next due date). Advance payments push the due date
  *            forward several months, so the green window extends to the
  *            halfway point before that next due date.
- *            Falls back to the original due-date heuristic for tenants
- *            that have never been explicitly marked as paid.
- * - RED    → the next due date has passed without a recorded payment
+ *            Falls back to a due-date comparison for tenants that have never
+ *            had a payment recorded: green until the stored due date passes
+ *            (plus the grace window), then red.
+ * - RED    → the due date has passed without a recorded payment
  * - YELLOW → approaching the next due date (past the halfway point)
  *
  * @param dueDate ISO date string "YYYY-MM-DD" of the tenant's next due date
@@ -38,8 +39,8 @@ export function getPaymentStatus(dueDate: string, today: Date = new Date(), last
 
   const now = startOfDay(today);
 
-  // Explicit "Mark as Paid" recorded → status derives from the payment, not
-  // the recurring day-of-month anchor, so it turns green immediately.
+  // Explicit payment recorded → status derives from the payment, not the
+  // recurring day-of-month anchor, so it turns green immediately.
   if (lastPaidDate) {
     const paid = parseIsoDate(lastPaidDate);
     if (paid) {
@@ -53,9 +54,9 @@ export function getPaymentStatus(dueDate: string, today: Date = new Date(), last
 
       // Advance-payment aware. The tenant stays green through the first half
       // of the paid period — measured from the last payment to the next due
-      // date (which has been rolled forward by the mark-as-paid), the halfway
-      // point before the next rent. Paying several months ahead keeps them green
-      // longer than the fixed recent-paid window would.
+      // date (which has been rolled forward when the payment was recorded), the
+      // halfway point before the next rent. Paying several months ahead keeps
+      // them green longer than the fixed recent-paid window would.
       const paidSpanDays = Math.max(0, Math.round((nextDue.getTime() - paidStart.getTime()) / 86_400_000));
       const greenDays = Math.max(STATUS_CONFIG.RECENT_PAID_DAYS, Math.round(paidSpanDays / 2));
 
@@ -65,13 +66,16 @@ export function getPaymentStatus(dueDate: string, today: Date = new Date(), last
     }
   }
 
-  // Legacy fallback: no recorded payment → original due-date heuristic.
-  const lastDue = lastOccurrenceOfDay(due.getDate(), now);
-  const daysSinceDue = Math.round((now.getTime() - lastDue.getTime()) / 86_400_000);
-
-  if (daysSinceDue <= STATUS_CONFIG.OVERDUE_GRACE_DAYS) return "red";
-  if (daysSinceDue <= STATUS_CONFIG.RECENT_PAID_DAYS) return "green";
-  return "yellow";
+  // Legacy fallback: no recorded payment. A tenant is only overdue once their
+  // stored due date has passed (plus the grace window) — before that they're
+  // current. The old day-of-month anchor made every tenant "due" on that day
+  // each month, so a brand-new tenant (due = their move-in day, per
+  // first-payment-month-spec) showed red "Due today" the moment they were
+  // created. For these tenants the stored due date is a specific date, not a
+  // recurring day-of-month.
+  const daysSinceDue = Math.round((now.getTime() - due.getTime()) / 86_400_000);
+  if (daysSinceDue <= STATUS_CONFIG.OVERDUE_GRACE_DAYS) return "green";
+  return "red";
 }
 
 /** Human-readable label for a payment status given a due date. */
@@ -86,7 +90,6 @@ export function paymentLabel(
 
   const now = startOfDay(today);
   const dayOfMonth = due.getDate();
-  const daysSinceDue = Math.round((now.getTime() - lastOccurrenceOfDay(dayOfMonth, now).getTime()) / 86_400_000);
   // For tenants with a recorded payment, the stored due date IS the next due
   // date (it was rolled forward on payment) — measure from it directly.
   const actualDaysUntilDue = Math.round((startOfDay(due).getTime() - now.getTime()) / 86_400_000);
@@ -99,13 +102,18 @@ export function paymentLabel(
       if (lastPaidDate) {
         return actualDaysUntilDue === 0 ? "Due today" : `Overdue ${-actualDaysUntilDue}d`;
       }
-      return daysSinceDue === 0 ? "Due today" : `Overdue ${daysSinceDue}d`;
+      // Unpaid tenants: overdue counts from the stored due date (not the
+      // recurring day-of-month), so it doesn't reset each month.
+      const overdueDays = Math.max(0, Math.round((now.getTime() - startOfDay(due).getTime()) / 86_400_000));
+      return overdueDays === 0 ? "Due today" : `Overdue ${overdueDays}d`;
     case "yellow":
       if (lastPaidDate) return `Due in ${Math.max(actualDaysUntilDue, 0)}d`;
       return `Due in ${daysUntilDue}d`;
     case "green":
     default:
-      return "Paid";
+      // Unpaid tenants that simply aren't due yet read "Current"; tenants
+      // with a recorded payment read "Paid".
+      return lastPaidDate ? "Paid" : "Current";
   }
 }
 
@@ -145,15 +153,6 @@ function formatIsoDate(d: Date): string {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${mm}-${dd}`;
-}
-
-/** Most recent date on or before `ref` that falls on `dayOfMonth` (clamped to month length). */
-function lastOccurrenceOfDay(dayOfMonth: number, ref: Date): Date {
-  const clamped = Math.min(dayOfMonth, daysInMonth(ref.getFullYear(), ref.getMonth()));
-  const candidate = new Date(ref.getFullYear(), ref.getMonth(), clamped);
-  if (candidate.getTime() <= ref.getTime()) return candidate;
-  const prev = new Date(ref.getFullYear(), ref.getMonth() - 1, 1);
-  return new Date(prev.getFullYear(), prev.getMonth(), Math.min(dayOfMonth, daysInMonth(prev.getFullYear(), prev.getMonth())));
 }
 
 /** Next date strictly after `ref` that falls on `dayOfMonth` (clamped to month length). */

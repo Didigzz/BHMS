@@ -1,6 +1,6 @@
 /**
  * Browser-preview shim for `@tauri-apps/plugin-fs` (only wired when
- * `DIGAL_PREVIEW=1`). Paths resolve inside the shared virtual filesystem;
+ * `RENTEASE_PREVIEW=1`). Paths resolve inside the shared virtual filesystem;
  * FileSystemFileHandle values (from the File System Access API fallback in the
  * dialog shim) are honored for real downloads.
  */

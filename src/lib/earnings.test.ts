@@ -143,6 +143,19 @@ describe("computeMonthSummary", () => {
     expect(s.pending).toBe(0);
   });
 
+  it("exposes the covered due date of a due-date-model payment", () => {
+    const tenants = [tenant(1, "Juan", "2026-01-01")];
+    // New-style payment: covers September, due Sep 15 (paid early in August).
+    const payments: EarningsPayment[] = [
+      { tenant_id: 1, amount: 2500, covers_month: "2026-09", due_date: "2026-09-15" },
+    ];
+    const s = computeMonthSummary(tenants, payments, "2026-09");
+    expect(s.rows[0].paid).toBe(true);
+    expect(s.rows[0].paidDueDate).toBe("2026-09-15");
+    // The due-date-less helper rows leave paidDueDate null.
+    expect(computeMonthSummary(tenants, [payment(1, 2500, "2026-09")], "2026-09").rows[0].paidDueDate).toBeNull();
+  });
+
   it("returns zeroes for an empty month", () => {
     const s = computeMonthSummary([], [], "2026-08");
     expect(s).toMatchObject({ expected: 0, collected: 0, pending: 0, paidCount: 0, unpaidCount: 0 });

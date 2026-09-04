@@ -9,12 +9,12 @@
     onError: (msg: string | null) => void;
   } = $props();
 
-  let houseName = $state("Digal Boarding House");
+  let houseName = $state("RentEase");
   let loaded = $state(false);
 
   onMount(async () => {
     try {
-      houseName = await getSetting("house_name", "Digal Boarding House");
+      houseName = await getSetting("house_name", "RentEase");
     } catch (e) {
       onError(`Failed to load settings: ${String(e)}`);
     } finally {
@@ -27,7 +27,7 @@
     const trimmed = houseName.trim();
     if (!trimmed) {
       pushToast("Boarding house name can't be empty", "error");
-      houseName = await getSetting("house_name", "Digal Boarding House");
+      houseName = await getSetting("house_name", "RentEase");
       return;
     }
     try {
@@ -49,7 +49,7 @@
     <div class="house-row">
       <input
         type="text"
-        placeholder="e.g. Digal Boarding House"
+        placeholder="e.g. RentEase"
         maxlength="60"
         bind:value={houseName}
       />

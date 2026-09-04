@@ -2,14 +2,18 @@
   import { onMount } from "svelte";
   import { page } from "$app/state";
   import { checkAndNotify } from "$lib/reminders";
+  import { initTheme } from "$lib/theme";
   import ToastHost from "$lib/components/ToastHost.svelte";
   // App-wide design system (buttons, cards, badges, modal overlay, theme).
   import "../app.css";
 
-  // Check-on-open reminders: fires any due/overdue pings that happened while
-  // the app was closed (de-duped in notifications_log). Safe to run even in a
-  // plain browser dev server — the plugin is guarded inside reminders.ts.
+  // Startup: apply the saved theme (Settings → Appearance, brief flash of the
+  // device theme is expected while it loads) and fire any due/overdue pings
+  // that happened while the app was closed (de-duped in notifications_log).
+  // Both are safe in a plain browser dev server — the Tauri plugin calls are
+  // guarded inside theme.ts / reminders.ts.
   onMount(() => {
+    initTheme();
     checkAndNotify();
   });
 </script>
@@ -90,7 +94,9 @@
 
   .gear {
     position: fixed;
-    top: 10px;
+    /* Below the phone's status bar (viewport-fit=cover in app.html makes
+       env(safe-area-inset-top) real); falls back to ~10px on desktop. */
+    top: calc(env(safe-area-inset-top) + 10px);
     right: 10px;
     z-index: 90;
     width: 38px;
@@ -133,12 +139,24 @@
     color: var(--accent);
   }
 
+  /* The :root data-theme guard makes these follow the manual theme override
+     (src/lib/theme.ts) in addition to the OS setting. */
+  :global(:root[data-theme="dark"]) .tabbar {
+    background: rgba(18, 18, 20, 0.78);
+    border-top-color: rgba(84, 84, 88, 0.65);
+  }
+  :global(:root[data-theme="dark"]) .gear {
+    background: rgba(44, 44, 46, 0.8);
+    box-shadow:
+      0 2px 10px rgba(0, 0, 0, 0.35),
+      inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+  }
   @media (prefers-color-scheme: dark) {
-    .tabbar {
+    :global(:root:not([data-theme="light"])) .tabbar {
       background: rgba(18, 18, 20, 0.78);
       border-top-color: rgba(84, 84, 88, 0.65);
     }
-    .gear {
+    :global(:root:not([data-theme="light"])) .gear {
       background: rgba(44, 44, 46, 0.8);
       box-shadow:
         0 2px 10px rgba(0, 0, 0, 0.35),
@@ -159,14 +177,24 @@
       box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
     }
   }
-  @media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
-    .tabbar {
+  @media (prefers-reduced-transparency: reduce) {
+    :global(:root[data-theme="dark"]) .tabbar {
       background: #1c1c1e;
       border-top-color: #3a3a3e;
     }
-    .gear {
+    :global(:root[data-theme="dark"]) .gear {
       background: #2a2a2d;
       box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    }
+    @media (prefers-color-scheme: dark) {
+      :global(:root:not([data-theme="light"])) .tabbar {
+        background: #1c1c1e;
+        border-top-color: #3a3a3e;
+      }
+      :global(:root:not([data-theme="light"])) .gear {
+        background: #2a2a2d;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+      }
     }
   }
 

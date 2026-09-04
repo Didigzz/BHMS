@@ -5,6 +5,7 @@
   import { getSetting } from "$lib/settings";
   import { formatDate } from "$lib/format";
   import { pushToast } from "$lib/toast.svelte";
+  import { pushOverlay } from "$lib/back-stack";
 
   let {
     onError,
@@ -65,6 +66,15 @@
     if (importing) return;
     pendingImport = null;
   }
+
+  // Android back button closes the restore-confirm dialog instead of
+  // navigating away. This section is always mounted, so register only while
+  // the (conditional) dialog is actually open.
+  $effect(() => {
+    if (!pendingImport) return;
+    const unregister = pushOverlay(closeImport);
+    return () => unregister();
+  });
 
   async function confirmImport() {
     const chosen = pendingImport;

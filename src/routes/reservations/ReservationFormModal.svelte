@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { modalMaterial } from "$lib/motion";
   import { phpPeso } from "$lib/format";
-  import type { ReservationFormState, RoomOption, Scope } from "./types";
+  import { pushOverlay } from "$lib/back-stack";
+  import type { HoldType, ReservationFormState, RoomOption } from "./types";
 
   let {
     rooms,
@@ -25,37 +26,63 @@
       room_id: initialRoomId,
       reservation_date: "",
       target_move_in_date: "",
-      scope: "whole",
+      hold_type: "whole",
+      bed_count: "1",
       deposit: "",
     }))
   );
   let formError: string | null = $state(null);
 
-  function roomAvailableFor(room: RoomOption, scope: Scope): boolean {
-    if (room.maintenance === 1 || room.has_active_reservation > 0) return false;
-    if (scope === "whole") return room.tenant_count === 0;
-    return room.tenant_count < room.capacity;
+  /** Beds a room still has free (occupied beds + partial holds counted against capacity). */
+  function remainingBeds(room: RoomOption): number {
+    return room.capacity - room.occupied_beds - room.held_beds;
   }
 
-  const availableRooms = $derived(rooms.filter((r) => roomAvailableFor(r, form.scope)));
+  /** Beds the current form would hold; null for a whole-room hold. While a
+   *  custom count is still untyped, fall back to 1 so the room list doesn't
+   *  empty out (validate() enforces the real count at save time). */
+  function requestedBedCount(): number | null {
+    if (form.hold_type === "whole") return null;
+    if (form.hold_type === "bed") return 1;
+    const n = Number(form.bed_count);
+    return Number.isInteger(n) && n >= 1 ? n : 1;
+  }
+  const requestedBeds = $derived(requestedBedCount());
+
+  function roomAvailableFor(room: RoomOption, holdType: HoldType, beds: number | null): boolean {
+    if (room.maintenance === 1) return false;
+    // A whole-room hold needs a completely vacant room (no tenants, no holds).
+    if (holdType === "whole") {
+      return room.occupied_beds === 0 && room.held_beds === 0 && room.has_whole_hold === 0;
+    }
+    if (room.has_whole_hold === 1) return false;
+    if (beds == null || !Number.isInteger(beds) || beds < 1) return false;
+    return beds <= remainingBeds(room);
+  }
+
+  const availableRooms = $derived(
+    rooms.filter((r) => roomAvailableFor(r, form.hold_type, requestedBeds))
+  );
 
   function roomLabel(room: RoomOption): string {
-    const free = room.capacity - room.tenant_count;
-    const suffix = form.scope === "whole" ? "" : ` — ${free} slot${free === 1 ? "" : "s"} free`;
-    return `${room.room_number} (${room.tenant_count}/${room.capacity}) · ${phpPeso(room.monthly_rate)}/mo${suffix}`;
+    if (form.hold_type === "whole") {
+      return `${room.room_number} (${room.occupied_beds}/${room.capacity}) · ${phpPeso(room.monthly_rate)}/mo`;
+    }
+    const free = remainingBeds(room);
+    return `${room.room_number} (${room.occupied_beds}/${room.capacity}) · ${phpPeso(room.monthly_rate)}/mo — ${free} bed${free === 1 ? "" : "s"} free`;
   }
 
-  function scopeLabel(scope: Scope): string {
-    return scope === "whole" ? "whole" : "one-slot";
+  function holdTypeLabel(holdType: HoldType): string {
+    return holdType === "whole" ? "whole-room" : holdType === "bed" ? "one-bed" : "custom-bed";
   }
 
   function selectedRoom(): RoomOption | undefined {
     return rooms.find((r) => String(r.id) === String(form.room_id));
   }
 
-  function scopeChanged() {
+  function holdTypeChanged() {
     const room = selectedRoom();
-    if (room && !roomAvailableFor(room, form.scope)) form.room_id = "";
+    if (room && !roomAvailableFor(room, form.hold_type, requestedBeds)) form.room_id = "";
   }
 
   function validate(): string | null {
@@ -64,8 +91,27 @@
     if (!form.room_id) return "Please select a room.";
     const room = selectedRoom();
     if (!room) return "Selected room no longer exists.";
-    if (!roomAvailableFor(room, form.scope)) {
-      return `${room.room_number} is not available for a ${scopeLabel(form.scope)}-room reservation right now.`;
+    if (form.hold_type === "whole") {
+      if (room.occupied_beds > 0) {
+        return `${room.room_number} already has tenants — choose a bed hold instead.`;
+      }
+      if (room.held_beds > 0 || room.has_whole_hold === 1) {
+        return `${room.room_number} already has an active hold — it is not fully vacant.`;
+      }
+    } else if (room.has_whole_hold === 1) {
+      return `${room.room_number} is fully reserved for the whole room.`;
+    } else if (form.hold_type === "bed") {
+      if (remainingBeds(room) < 1) {
+        return `${room.room_number} has no beds left to hold.`;
+      }
+    } else {
+      const beds = Number(form.bed_count);
+      if (!Number.isInteger(beds) || beds < 1) {
+        return "Beds to hold must be a whole number of at least 1.";
+      }
+      if (beds > remainingBeds(room)) {
+        return `${room.room_number} only has ${remainingBeds(room)} bed${remainingBeds(room) === 1 ? "" : "s"} left — you can hold at most that many.`;
+      }
     }
     if (!form.reservation_date) return "Reservation date is required.";
     if (!form.target_move_in_date) return "Target move-in date is required.";
@@ -91,6 +137,13 @@
       onClose();
     }
   }
+
+  // Android back button closes this modal (same path as Cancel) instead of
+  // letting the WebView navigate its history.
+  onMount(() => {
+    const unregister = pushOverlay(onClose);
+    return unregister;
+  });
 </script>
 
 <div class="modal" role="dialog" aria-label="Add reservation" transition:modalMaterial>
@@ -108,14 +161,33 @@
     </label>
 
     <label>
-      Hold
-      <select bind:value={form.scope} onchange={scopeChanged}>
-        <option value="whole">The whole room</option>
-        <option value="slot">One slot (shared room)</option>
+      Hold Type
+      <select bind:value={form.hold_type} onchange={holdTypeChanged}>
+        <option value="whole">Whole room</option>
+        <option value="bed">One bed</option>
+        <option value="custom">Custom (choose beds)</option>
       </select>
     </label>
 
+    {#if form.hold_type === "custom"}
+      <label>
+        Beds to hold
+        <input
+          type="number"
+          min="1"
+          step="1"
+          placeholder="e.g. 2"
+          bind:value={form.bed_count}
+        />
+      </label>
+    {/if}
+
     <label>
+      Holding deposit (₱, optional)
+      <input type="number" min="0" step="0.01" placeholder="e.g. 500" bind:value={form.deposit} />
+    </label>
+
+    <label class="span-2">
       Room
       <select bind:value={form.room_id}>
         <option value="" disabled>Select room…</option>
@@ -125,8 +197,8 @@
       </select>
     </label>
 
-    {#if form.room_id && selectedRoom() && !roomAvailableFor(selectedRoom()!, form.scope)}
-      <p class="form-error">That room is no longer available for a {scopeLabel(form.scope)}-room hold.</p>
+    {#if form.room_id && selectedRoom() && !roomAvailableFor(selectedRoom()!, form.hold_type, requestedBeds)}
+      <p class="form-error">That room is no longer available for a {holdTypeLabel(form.hold_type)} hold.</p>
     {/if}
 
     <label>
@@ -137,11 +209,6 @@
     <label>
       Target move-in date
       <input type="date" bind:value={form.target_move_in_date} />
-    </label>
-
-    <label>
-      Holding deposit (₱, optional)
-      <input type="number" min="0" step="0.01" placeholder="e.g. 500" bind:value={form.deposit} />
     </label>
 
     {#if formError}
@@ -157,14 +224,18 @@
 
 <style>
   /* ---- form ---- */
+  /* Two-up field grid that collapses to one column on narrow windows, so the
+     whole form fits without scrolling. Fields are grouped in logical pairs;
+     anything needing full width (Room, errors, actions) spans both columns. */
   .res-form {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
     gap: 12px;
   }
 
   .res-form h2 {
-    margin: 0 0 4px;
+    grid-column: 1 / -1;
+    margin: 0;
     font-size: 1.2rem;
   }
 
@@ -172,13 +243,23 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+    min-width: 0;
     font-weight: 600;
     font-size: 0.85rem;
     color: var(--label-2);
   }
 
+  .res-form label.span-2,
+  .res-form .form-error,
+  .res-form .form-actions {
+    grid-column: 1 / -1;
+  }
+
   .res-form input,
   .res-form select {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     border-radius: 10px;
     border: 1px solid var(--separator);
     padding: 10px 12px;

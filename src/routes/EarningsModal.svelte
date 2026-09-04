@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { modalMaterial } from "$lib/motion";
-  import { formatMonthKey, phpPeso, phpPesoPrecise } from "$lib/format";
+  import { formatDate, formatMonthKey, phpPeso, phpPesoPrecise } from "$lib/format";
+  import { pushOverlay } from "$lib/back-stack";
   import type { MonthSummary } from "$lib/earnings";
 
   let {
@@ -12,6 +14,12 @@
     month: string;
     onClose: () => void;
   } = $props();
+
+  // Android back button closes this modal instead of navigating away.
+  onMount(() => {
+    const unregister = pushOverlay(onClose);
+    return unregister;
+  });
 </script>
 
 <div class="modal" role="dialog" aria-label="Earnings breakdown" transition:modalMaterial>
@@ -28,6 +36,9 @@
               <span class="b-name">{row.tenant.name}</span>
               <span class="b-meta">
                 {row.tenant.room_number} · {phpPeso(row.tenant.rate)}/mo
+                {#if row.paid && row.paidDueDate}
+                  · Due {formatDate(row.paidDueDate)}
+                {/if}
                 {#if !row.paid && row.collected > 0}
                   · {phpPesoPrecise(row.collected)} collected
                 {/if}

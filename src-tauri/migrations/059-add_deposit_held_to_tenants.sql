@@ -1,0 +1,1 @@
+ALTER TABLE tenants ADD COLUMN deposit_held REAL NOT NULL DEFAULT 0;

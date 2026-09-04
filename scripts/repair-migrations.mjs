@@ -17,7 +17,7 @@
 //   node scripts/repair-migrations.mjs [path-to-db]
 //
 // Defaults to the live installed app database at
-// %APPDATA%\com.digal.boardinghouse\boarding-house.db
+// %APPDATA%\com.rentease.app\boarding-house.db
 
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
@@ -31,7 +31,7 @@ const MIGRATIONS_DIR = join(ROOT, "src-tauri", "migrations");
 
 const dbPath =
   process.argv[2] ??
-  join(homedir(), "AppData", "Roaming", "com.digal.boardinghouse", "boarding-house.db");
+  join(homedir(), "AppData", "Roaming", "com.rentease.app", "boarding-house.db");
 
 if (!existsSync(dbPath)) {
   console.log(`No database at ${dbPath} — nothing to repair.`);

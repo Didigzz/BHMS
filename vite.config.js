@@ -4,13 +4,13 @@ import { fileURLToPath, URL } from "node:url";
 
 const host = process.env.TAURI_DEV_HOST;
 
-// Plain-browser debug mode (`DIGAL_PREVIEW=1 npm run dev`): the app is a Tauri
+// Plain-browser debug mode (`RENTEASE_PREVIEW=1 npm run dev`): the app is a Tauri
 // SPA, so its `@tauri-apps/*` imports throw outside the WebView. Pointing them
 // at src/lib/browser/* shims (sql.js database + virtual fs + dialog/notification
 // mocks) lets every page and workflow run in a normal browser for debugging.
 // The real `tauri dev` / `tauri build` flows never set this flag, so they keep
 // the genuine plugins.
-const preview = process.env.DIGAL_PREVIEW === "1";
+const preview = process.env.RENTEASE_PREVIEW === "1";
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({

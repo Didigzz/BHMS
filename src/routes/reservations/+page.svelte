@@ -30,7 +30,8 @@
       const db = await getDb();
       reservations = await db.select<Reservation[]>(
         `SELECT res.id, res.room_id, r.room_number, res.name, res.contact,
-                res.reservation_date, res.target_move_in_date, res.scope, res.deposit, res.status
+                res.reservation_date, res.target_move_in_date, res.hold_type, res.bed_count,
+                res.deposit, res.status
          FROM reservations res JOIN rooms r ON r.id = res.room_id
          ORDER BY CASE res.status WHEN 'active' THEN 0 ELSE 1 END,
                   CASE res.status WHEN 'active' THEN res.target_move_in_date END ASC,
@@ -38,8 +39,11 @@
       );
       rooms = await db.select<RoomOption[]>(
         `SELECT r.id, r.room_number, r.capacity, r.monthly_rate, r.maintenance,
-                (SELECT COUNT(*) FROM tenants t WHERE t.room_id = r.id AND t.moved_out_date IS NULL) AS tenant_count,
-                (SELECT COUNT(*) FROM reservations x WHERE x.room_id = r.id AND x.status = 'active') AS has_active_reservation
+                COALESCE((SELECT SUM(t.beds_occupied) FROM tenants t WHERE t.room_id = r.id AND t.moved_out_date IS NULL), 0) AS occupied_beds,
+                COALESCE((SELECT SUM(x.bed_count) FROM reservations x WHERE x.room_id = r.id
+                          AND x.status = 'active' AND x.hold_type IN ('bed','custom')), 0) AS held_beds,
+                EXISTS(SELECT 1 FROM reservations x WHERE x.room_id = r.id
+                       AND x.status = 'active' AND x.hold_type = 'whole') AS has_whole_hold
          FROM rooms r ORDER BY r.id`
       );
     } catch (e) {
@@ -75,9 +79,13 @@
       // undefined when empty), so accept both and normalize to null/₱ value.
       const deposit =
         form.deposit == null || String(form.deposit).trim() === "" ? null : Number(form.deposit);
+      // 'whole' holds the entire room (no bed count); 'bed' is exactly one;
+      // 'custom' carries the bed count the landlord typed in the form.
+      const bedCount =
+        form.hold_type === "whole" ? null : form.hold_type === "bed" ? 1 : Number(form.bed_count);
       await db.execute(
-        "INSERT INTO reservations (room_id, name, contact, reservation_date, target_move_in_date, scope, deposit) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-        [Number(form.room_id), form.name.trim(), form.contact.trim(), form.reservation_date, form.target_move_in_date, form.scope, deposit]
+        "INSERT INTO reservations (room_id, name, contact, reservation_date, target_move_in_date, hold_type, bed_count, deposit) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+        [Number(form.room_id), form.name.trim(), form.contact.trim(), form.reservation_date, form.target_move_in_date, form.hold_type, bedCount, deposit]
       );
       await loadData();
       pushToast(`Reservation added — ${form.name.trim()}`, "success");
@@ -85,10 +93,10 @@
     } catch (e) {
       const msg = String(e);
       let friendly: string;
-      if (msg.toLowerCase().includes("unique")) friendly = "That room already has an active reservation.";
-      else if (msg.toLowerCase().includes("under maintenance")) friendly = "That room is under maintenance.";
-      else if (msg.toLowerCase().includes("already has tenants")) friendly = 'That room already has tenants — choose "one slot" instead.';
-      else if (msg.toLowerCase().includes("full capacity")) friendly = "That room is at full capacity.";
+      if (msg.toLowerCase().includes("under maintenance")) friendly = "That room is under maintenance.";
+      else if (msg.toLowerCase().includes("already has tenants")) friendly = "That room already has tenants — choose a bed hold instead.";
+      else if (msg.toLowerCase().includes("reserved")) friendly = "That room already has a conflicting hold.";
+      else if (msg.toLowerCase().includes("full capacity")) friendly = "That room has no beds left.";
       else friendly = `Failed to save reservation: ${msg}`;
       pushToast(friendly, "error");
       return friendly;
@@ -112,9 +120,11 @@
         // Converted tenants snapshot the room's current rate (same rule as the
         // tenant form) so later room-rate edits don't change their charge.
         const room = rooms.find((r) => r.id === res.room_id);
+        // The holding deposit carries over as the tenant's deposit pot
+        // (deposit_held), so it's usable in the held-balance flow.
         await db.execute(
-          "INSERT INTO tenants (name, contact, room_id, move_in_date, due_date, deposit_amount, monthly_rate) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-          [payload.name.trim(), payload.contact.trim(), res.room_id, payload.move_in_date, payload.due_date, res.deposit, room?.monthly_rate ?? 0]
+          "INSERT INTO tenants (name, contact, room_id, move_in_date, due_date, deposit_amount, deposit_held, monthly_rate, beds_occupied) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+          [payload.name.trim(), payload.contact.trim(), res.room_id, payload.move_in_date, payload.due_date, res.deposit, res.deposit ?? 0, room?.monthly_rate ?? 0, payload.beds_occupied]
         );
       } catch (insertErr) {
         // Put the hold back so the room stays reserved; if the revert itself
@@ -197,7 +207,7 @@
   {/if}
 
   {#if convertTarget}
-    <ConvertModal reservation={convertTarget} onConfirm={confirmConvert} onClose={() => (convertTarget = null)} />
+    <ConvertModal reservation={convertTarget} rooms={rooms} onConfirm={confirmConvert} onClose={() => (convertTarget = null)} />
   {/if}
 
   {#if pendingCancel}

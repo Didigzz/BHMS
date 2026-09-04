@@ -1,20 +1,38 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { modalMaterial } from "$lib/motion";
   import { addMonths } from "$lib/payment-status";
   import { formatDate, phpPesoPrecise } from "$lib/format";
+  import { heldBalanceOf } from "$lib/held-balance";
+  import { pushOverlay } from "$lib/back-stack";
   import type { Room, Tenant } from "./types";
 
   const PAYMENT_METHODS = ["Cash", "GCash", "Maya", "Bank transfer", "Other"] as const;
+
+  function todayIso(): string {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  }
 
   let {
     tenant,
     rooms,
     onConfirm,
+    onApplyBalance,
     onClose,
   }: {
     tenant: Tenant;
     rooms: Room[];
-    onConfirm: (t: Tenant, amount: number, months: number, method: string) => Promise<string | null>;
+    onConfirm: (
+      t: Tenant,
+      amount: number,
+      method: string,
+      paidDate: string,
+      coveredDueDate: string,
+      nextDueDate: string
+    ) => Promise<string | null>;
+    /** When provided, the modal offers "Apply held balance" (opens the apply flow). */
+    onApplyBalance?: (t: Tenant) => void;
     onClose: () => void;
   } = $props();
 
@@ -24,32 +42,55 @@
     return t.monthly_rate ?? rooms.find((r) => r.id === t.room_id)?.monthly_rate ?? 0;
   }
 
-  let months = $state(1);
+  // Payment date = when money was actually received (defaults to today, editable).
+  let paidDate = $state(todayIso());
+  // Due date being paid = the specific due date this payment settles. Defaults
+  // to the tenant's current next due date — the overdue period settles first.
+  let coveredDueDate = $state(tenant.due_date);
+  // Next due date = the tenant's new stored due date (landlord-managed). This
+  // is also the manual lever to fix a "super overdue" tenant.
+  let nextDueDate = $state(addMonths(tenant.due_date, 1));
   let method = $state<string>(PAYMENT_METHODS[0]);
   let saving = $state(false);
   let error: string | null = $state(null);
 
-  // Total amount owed for the chosen months (rate × months). Partial payments
-  // are not allowed — the amount is locked to the full rent for the months
-  // being paid (billing-features-spec.md §3).
-  const amount = $derived(rateOf(tenant) * months);
-  // Due date jumps forward the chosen number of months.
-  const newDue = $derived(addMonths(tenant.due_date, months));
+  // Partial payments are not allowed — the amount is locked to one month's
+  // rate (payment-due-date-spec.md §6.2).
+  const amount = $derived(rateOf(tenant));
+  // Next due follows the covered due date (+1 month) unless the landlord
+  // edits it manually.
+  $effect(() => {
+    nextDueDate = addMonths(coveredDueDate, 1);
+  });
+  // Held balance available for this tenant (shown as an alternative to cash).
+  const held = $derived(heldBalanceOf(tenant));
 
-  function changeMonths(delta: number) {
-    months = Math.max(1, months + delta);
-  }
+  // All three dates required; the next due must come after the covered one.
+  const datesValid = $derived(
+    !!paidDate && !!coveredDueDate && !!nextDueDate && nextDueDate > coveredDueDate
+  );
 
   function close() {
     if (saving) return;
     onClose();
   }
 
+  // Android back button closes this modal (and only this modal) instead of
+  // letting the WebView navigate its history.
+  onMount(() => {
+    const unregister = pushOverlay(close);
+    return unregister;
+  });
+
   async function confirm() {
+    if (!datesValid) {
+      error = "Payment date, due date being paid, and next due date are all required (next due must be after the covered due date).";
+      return;
+    }
     saving = true;
     error = null;
     try {
-      const err = await onConfirm(tenant, amount, months, method);
+      const err = await onConfirm(tenant, amount, method, paidDate, coveredDueDate, nextDueDate);
       if (err) {
         error = err;
       } else {
@@ -61,18 +102,24 @@
   }
 </script>
 
-<div class="modal" role="dialog" aria-label="Mark as paid" transition:modalMaterial>
+<div class="modal" role="dialog" aria-label="Record payment" transition:modalMaterial>
   <div class="pay-panel">
-    <h2>Mark as Paid</h2>
+    <h2>Record Payment</h2>
     <p class="history-subtitle">{tenant.name} · {tenant.room_number}</p>
 
     <label>
-      Months being paid
-      <div class="month-stepper">
-        <button type="button" class="btn btn-small" onclick={() => changeMonths(-1)} disabled={months <= 1}>−</button>
-        <span class="month-count">{months} month{months === 1 ? "" : "s"}</span>
-        <button type="button" class="btn btn-small" onclick={() => changeMonths(1)}>+</button>
-      </div>
+      Payment date
+      <input type="date" bind:value={paidDate} />
+    </label>
+
+    <label>
+      Due date being paid
+      <input type="date" bind:value={coveredDueDate} />
+    </label>
+
+    <label>
+      Next due date
+      <input type="date" bind:value={nextDueDate} />
     </label>
 
     <label>
@@ -87,7 +134,7 @@
     <div class="amount-block" aria-label="Amount to collect">
       <span class="amount-value">{phpPesoPrecise(amount)}</span>
       <span class="amount-sub">
-        Full payment for {months} month{months === 1 ? "" : "s"} · new due {formatDate(newDue)}
+        Full payment for due date {formatDate(coveredDueDate)} · next due {formatDate(nextDueDate)}
       </span>
     </div>
 
@@ -95,17 +142,23 @@
       <p class="form-error">{error}</p>
     {/if}
 
+    {#if onApplyBalance && held > 0}
+      <button type="button" class="btn btn-small" onclick={() => onApplyBalance(tenant)} disabled={saving}>
+        Apply held balance ({phpPesoPrecise(held)})
+      </button>
+    {/if}
+
     <div class="form-actions">
       <button type="button" class="btn" onclick={close} disabled={saving}>Cancel</button>
-      <button type="button" class="btn btn-paid" onclick={confirm} disabled={saving}>
-        {saving ? "Saving…" : "Confirm Payment"}
+      <button type="button" class="btn btn-paid" onclick={confirm} disabled={saving || !datesValid}>
+        {saving ? "Saving…" : "Record Payment"}
       </button>
     </div>
   </div>
 </div>
 
 <style>
-  /* ---- mark as paid ---- */
+  /* ---- record payment ---- */
   .pay-panel {
     display: flex;
     flex-direction: column;
@@ -117,21 +170,10 @@
     font-size: 1.2rem;
   }
 
-  .month-stepper {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-top: 4px;
-  }
-
-  .month-count {
-    font-size: 1.05rem;
-    font-weight: 700;
-    min-width: 90px;
-    text-align: center;
-  }
-
-  .pay-panel select {
+  .pay-panel select,
+  .pay-panel input[type="date"] {
+    width: 100%;
+    box-sizing: border-box;
     border-radius: 10px;
     border: 1px solid var(--separator);
     padding: 10px 12px;
@@ -141,7 +183,8 @@
     background: var(--card);
   }
 
-  .pay-panel select:focus {
+  .pay-panel select:focus,
+  .pay-panel input[type="date"]:focus {
     outline: 2px solid var(--accent);
     border-color: transparent;
   }

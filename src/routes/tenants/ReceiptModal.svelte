@@ -2,22 +2,29 @@
   import { onMount } from "svelte";
   import { modalMaterial } from "$lib/motion";
   import { getSetting } from "$lib/settings";
-  import { formatDate, formatMonthRange, phpPesoPrecise } from "$lib/format";
+  import { formatDate, formatMonthRange, isDueDatePayment, phpPesoPrecise } from "$lib/format";
   import { shareReceiptImage } from "$lib/share";
   import { pushToast } from "$lib/toast.svelte";
+  import { pushOverlay } from "$lib/back-stack";
   import type { PaymentRecord } from "./types";
 
   let {
     tenant,
     rows,
+    recorded = false,
+    onEdit,
     onClose,
   }: {
     tenant: { name: string; room_number: string };
     rows: PaymentRecord[];
+    /** True when auto-opened right after recording — shows the success banner. */
+    recorded?: boolean;
+    /** When provided, shows an Edit button (opens the edit flow for this transaction). */
+    onEdit?: () => void;
     onClose: () => void;
   } = $props();
 
-  let houseName = $state("Digal Boarding House");
+  let houseName = $state("RentEase");
   let houseLoaded = $state(false);
   let exporting = $state(false);
   let shareError: string | null = $state(null);
@@ -31,11 +38,26 @@
   const firstMonth = $derived(rows[0]?.covers_month ?? null);
   const lastMonth = $derived(rows.length > 0 ? rows[rows.length - 1].covers_month : null);
   const method = $derived(rows[0]?.method ?? "—");
+  // New-style receipts cover one specific due date (shown exactly); legacy
+  // multi-month receipts keep the covered-month range.
+  const singleDueDate = $derived(rows.length === 1 && isDueDatePayment(rows[0]));
 
-  onMount(async () => {
-    houseName = await getSetting("house_name", "Digal Boarding House");
-    houseLoaded = true;
+  onMount(() => {
+    // Android back button closes this modal instead of navigating away. While
+    // the PNG is being exported the Close button is disabled — mirror that.
+    // The unregister must return synchronously (async onMount results are
+    // ignored as cleanups), so the house-name load is kicked off separately.
+    const unregister = pushOverlay(() => {
+      if (!exporting) onClose();
+    });
+    void loadHouseName();
+    return unregister;
   });
+
+  async function loadHouseName() {
+    houseName = await getSetting("house_name", "RentEase");
+    houseLoaded = true;
+  }
 
   /** Capture the receipt as a PNG and share / download it. */
   async function exportReceipt() {
@@ -66,6 +88,10 @@
 
 <div class="modal" role="dialog" aria-label="Receipt" transition:modalMaterial>
   <div class="receipt-panel">
+    {#if recorded}
+      <div class="recorded-banner" role="status">Payment recorded — {phpPesoPrecise(total)}</div>
+    {/if}
+
     <div class="receipt" bind:this={receiptEl}>
       <div class="receipt-head">
         <div class="receipt-house">{houseName}</div>
@@ -82,8 +108,10 @@
       <div class="r-divider"></div>
 
       <div class="r-row">
-        <span>Month(s) covered</span>
-        <strong>{formatMonthRange(firstMonth, lastMonth)}</strong>
+        <span>{singleDueDate ? "Due date" : "Month(s) covered"}</span>
+        <strong>
+          {singleDueDate ? formatDate(rows[0].due_date) : formatMonthRange(firstMonth, lastMonth)}
+        </strong>
       </div>
       <div class="r-row"><span>Amount</span><strong>{phpPesoPrecise(total)}</strong></div>
       <div class="r-row">
@@ -102,6 +130,9 @@
     {/if}
 
     <div class="form-actions">
+      {#if onEdit}
+        <button type="button" class="btn" onclick={onEdit} disabled={exporting}>Edit</button>
+      {/if}
       <button type="button" class="btn" onclick={onClose} disabled={exporting}>Close</button>
       <button type="button" class="btn btn-paid" onclick={exportReceipt} disabled={exporting || !houseLoaded}>
         {exporting ? "Saving…" : "Save to Photos"}
@@ -115,6 +146,17 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
+  }
+
+  /* ---- success banner (shown only right after recording) ---- */
+  .recorded-banner {
+    background: var(--green-soft);
+    color: var(--green-deep);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 0.92rem;
+    font-weight: 700;
+    text-align: center;
   }
 
   /* The receipt itself uses fixed colors (no theme vars) and monospace type so

@@ -1,6 +1,6 @@
 /**
  * Browser-preview shim for `@tauri-apps/plugin-sql` (only wired when
- * `DIGAL_PREVIEW=1`, see vite.config.js).
+ * `RENTEASE_PREVIEW=1`, see vite.config.js).
  *
  * Runs the REAL migration files against a sql.js (WASM SQLite) database so the
  * preview behaves like the production app: same tables, triggers, and business

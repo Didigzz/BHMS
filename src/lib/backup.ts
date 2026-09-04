@@ -63,13 +63,13 @@ async function liveDbPath(): Promise<string> {
   return main.file;
 }
 
-/** Spec filename convention: `digal-boarding-house-backup-2026-08-06.db`. */
+/** Spec filename convention: `rentease-backup-2026-08-06.db`. */
 function backupFileName(): string {
   const d = new Date();
   const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
     d.getDate()
   ).padStart(2, "0")}`;
-  return `digal-boarding-house-backup-${iso}.db`;
+  return `rentease-backup-${iso}.db`;
 }
 
 function todayIso(): string {
@@ -199,7 +199,7 @@ export async function chooseBackupFile(): Promise<ChosenBackup | null> {
     throw new Error("That file is not a SQLite database backup.");
   }
   if (!isBoardingHouseDb(data)) {
-    throw new Error("That file is not a Digal Boarding House backup.");
+    throw new Error("That file is not a RentEase backup.");
   }
   return { filePath: src, dataBase64: data, fileName: displayName(src) };
 }

@@ -1,6 +1,6 @@
 /**
  * Browser-preview shim for `@tauri-apps/plugin-dialog` (only wired when
- * `DIGAL_PREVIEW=1`). The automated preview sets `window.__shim.dialog.open`
+ * `RENTEASE_PREVIEW=1`). The automated preview sets `window.__shim.dialog.open`
  * / `.save` to drive flows deterministically; without hooks it falls back to
  * the browser File System Access API when available.
  */

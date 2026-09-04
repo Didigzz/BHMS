@@ -1,16 +1,18 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { modalMaterial } from "$lib/motion";
-  import { addMonths } from "$lib/payment-status";
   import { phpPesoPrecise } from "$lib/format";
-  import type { ConvertPayload, Reservation } from "./types";
+  import { pushOverlay } from "$lib/back-stack";
+  import type { ConvertPayload, Reservation, RoomOption } from "./types";
 
   let {
     reservation,
+    rooms,
     onConfirm,
     onClose,
   }: {
     reservation: Reservation;
+    rooms: RoomOption[];
     onConfirm: (payload: ConvertPayload) => Promise<string | null>;
     onClose: () => void;
   } = $props();
@@ -20,14 +22,50 @@
   let name = $state(untrack(() => reservation.name));
   let contact = $state(untrack(() => reservation.contact));
   let moveInDate = $state(untrack(() => reservation.target_move_in_date));
-  let dueDate = $state(untrack(() => addMonths(reservation.target_move_in_date, 1)));
+  // The first due date defaults to the target move-in day (same rule as the
+  // tenant form) so the first payment covers the move-in month
+  // (first-payment-month-spec.md). Editable — the landlord can set next month
+  // for a late-month move-in.
+  let dueDate = $state(untrack(() => reservation.target_move_in_date));
   let dueEdited = $state(false);
   let saving = $state(false);
   let error: string | null = $state(null);
 
+  /** Human label for the hold being converted, e.g. "Whole room" / "1 bed" / "3 beds". */
+  const holdLabel = $derived(
+    reservation.hold_type === "whole"
+      ? "Whole room"
+      : reservation.hold_type === "bed"
+        ? "1 bed"
+        : `${reservation.bed_count ?? 0} beds`
+  );
+
+  /** The room this reservation holds (for capacity + rate fallback). */
+  const room = $derived(rooms.find((r) => r.id === reservation.room_id));
+
+  /** Beds the reservation itself holds — released when it converts. Only
+   *  PARTIAL holds contribute to `held_beds`, so only they need removing from
+   *  the free-bed count (a whole hold contributes 0 and frees the whole room). */
+  const ownHoldBeds = $derived(reservation.hold_type === "whole" ? 0 : (reservation.bed_count ?? 1));
+
+  /** Beds free in the room AFTER this reservation's hold is released. */
+  const freeBeds = $derived(
+    room ? Math.max(0, room.capacity - room.occupied_beds - room.held_beds + ownHoldBeds) : 1
+  );
+
+  // Beds the converted tenant occupies — prefilled from the hold (whole room
+  // → the full capacity, custom → the held bed count), editable with a guard.
+  let beds = $state(
+    untrack(() =>
+      reservation.hold_type === "whole"
+        ? (rooms.find((r) => r.id === reservation.room_id)?.capacity ?? 1)
+        : (reservation.bed_count ?? 1)
+    )
+  );
+
   function moveInChanged(value: string) {
     if (!dueEdited) {
-      dueDate = addMonths(value, 1);
+      dueDate = value;
     }
   }
 
@@ -35,6 +73,12 @@
     if (saving) return;
     onClose();
   }
+
+  // Android back button closes this modal instead of navigating away.
+  onMount(() => {
+    const unregister = pushOverlay(close);
+    return unregister;
+  });
 
   async function confirm() {
     if (!name.trim()) {
@@ -57,6 +101,14 @@
       error = "Due date should not be before the move-in date.";
       return;
     }
+    if (!Number.isInteger(beds) || beds < 1) {
+      error = "Beds occupied must be a whole number of at least 1.";
+      return;
+    }
+    if (beds > freeBeds) {
+      error = `${reservation.room_number} only has ${freeBeds} bed${freeBeds === 1 ? "" : "s"} free.`;
+      return;
+    }
 
     saving = true;
     error = null;
@@ -66,6 +118,7 @@
         contact: contact.trim(),
         move_in_date: moveInDate,
         due_date: dueDate,
+        beds_occupied: beds,
       });
       if (err) {
         error = err;
@@ -93,7 +146,7 @@
       <input type="tel" bind:value={contact} />
     </label>
 
-    <p class="room-fixed">🛏️ Room: <strong>{reservation.room_number}</strong></p>
+    <p class="room-fixed">🛏️ Room: <strong>{reservation.room_number}</strong> · {holdLabel}</p>
 
     <label>
       Move-in date
@@ -108,6 +161,14 @@
       Due date (monthly payment)
       <input type="date" bind:value={dueDate} onchange={() => (dueEdited = true)} />
     </label>
+
+    <label>
+      Beds occupied
+      <input type="number" min="1" step="1" bind:value={beds} />
+    </label>
+    <p class="beds-hint">
+      Prefilled from the hold — {freeBeds} bed{freeBeds === 1 ? "" : "s"} free in this room.
+    </p>
 
     {#if reservation.deposit != null}
       <p class="deposit-note">
@@ -163,5 +224,11 @@
   .res-form input:focus {
     outline: 2px solid var(--accent);
     border-color: transparent;
+  }
+
+  .beds-hint {
+    margin: -4px 0 0;
+    font-size: 0.8rem;
+    color: var(--label-3);
   }
 </style>

@@ -1,5 +1,5 @@
 /**
- * Browser-preview infrastructure — ONLY bundled when `DIGAL_PREVIEW=1`
+ * Browser-preview infrastructure — ONLY bundled when `RENTEASE_PREVIEW=1`
  * (see vite.config.js). The real Tauri app never imports these files; they
  * back the `@tauri-apps/*` shims so every page and workflow can run inside a
  * plain-browser dev server for debugging.
@@ -11,7 +11,7 @@
  *    dialogs, run SQL, and inspect state.
  */
 
-const IDB_NAME = "digal-boarding-house-preview";
+const IDB_NAME = "rentease-preview";
 const IDB_STORE = "kv";
 
 let idbPromise: Promise<IDBDatabase> | null = null;
