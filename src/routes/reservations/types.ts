@@ -1,4 +1,10 @@
-export type HoldType = "whole" | "bed" | "custom";
+import type { HoldType } from "$lib/reservations";
+
+// HoldType and ReservationFormState live in src/lib/reservations.ts (shared
+// with the room-card Reserve flow); re-exported here so the existing imports
+// in this route keep working unchanged.
+export type { HoldType, ReservationFormState } from "$lib/reservations";
+
 export type ResStatus = "active" | "converted" | "cancelled";
 
 export interface Reservation {
@@ -16,6 +22,16 @@ export interface Reservation {
   status: ResStatus;
 }
 
+/** Tenant fields collected by the convert modal before the page persists. */
+export interface ConvertPayload {
+  name: string;
+  contact: string;
+  move_in_date: string;
+  due_date: string;
+  /** Beds the converted tenant occupies (prefilled from the hold, editable). */
+  beds_occupied: number;
+}
+
 export interface RoomOption {
   id: number;
   room_number: string;
@@ -28,29 +44,4 @@ export interface RoomOption {
   /** 1 when an active whole-room hold exists, else 0. */
   has_whole_hold: number;
   maintenance: number;
-}
-
-/** Raw add-reservation form values (strings) before conversion at save time. */
-export interface ReservationFormState {
-  name: string;
-  contact: string;
-  room_id: string;
-  reservation_date: string;
-  target_move_in_date: string;
-  hold_type: HoldType;
-  /** Raw custom-bed input — only meaningful when hold_type is "custom". */
-  bed_count: string | number | null | undefined;
-  /** Raw holding-deposit input — string when untouched, number once typed
-   * (Svelte 5 binds <input type="number"> as a number), undefined when empty. */
-  deposit: string | number | null | undefined;
-}
-
-/** Tenant fields collected by the convert modal before the page persists. */
-export interface ConvertPayload {
-  name: string;
-  contact: string;
-  move_in_date: string;
-  due_date: string;
-  /** Beds the converted tenant occupies (prefilled from the hold, editable). */
-  beds_occupied: number;
 }

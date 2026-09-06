@@ -12,6 +12,7 @@
     onEdit,
     onDelete,
     onView,
+    onReserve,
     onManageTenants,
   }: {
     room: Room;
@@ -20,6 +21,7 @@
     onEdit: (r: Room) => void;
     onDelete: (r: Room) => void;
     onView: (r: Room) => void;
+    onReserve: (r: Room) => void;
     onManageTenants: (r: Room) => void;
   } = $props();
 
@@ -178,13 +180,20 @@
 
     <div class="room-footer">
       {#if canReserve}
-        <a
+        <!-- A real button, not a link: it opens the reservation form as a modal
+             ON this page (reserve-room-lock-spec.md §3) — no navigation, and
+             being a <button> it also satisfies the card's onkeydown guard, so
+             it can never leak into opening the detail sheet. -->
+        <button
+          type="button"
           class="btn btn-small btn-reserve"
-          href={`/reservations?room=${room.id}`}
-          onclick={(e) => e.stopPropagation()}
+          onclick={(e) => {
+            e.stopPropagation();
+            onReserve(room);
+          }}
         >
           Reserve
-        </a>
+        </button>
       {/if}
       <span class="view-hint" class:push-right={canReserve}>View details ›</span>
     </div>
@@ -409,11 +418,10 @@
     margin-top: 12px;
   }
 
-  .room-footer a.btn {
+  .room-footer .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    text-decoration: none;
   }
 
   .btn-reserve {

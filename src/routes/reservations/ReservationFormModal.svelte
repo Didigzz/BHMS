@@ -3,16 +3,28 @@
   import { modalMaterial } from "$lib/motion";
   import { phpPeso } from "$lib/format";
   import { pushOverlay } from "$lib/back-stack";
+  import {
+    capacityHint,
+    holdOptionDisabled,
+    remainingBeds,
+    roomFitsHold,
+    saveDisabledForCapacity,
+  } from "$lib/reservations";
   import type { HoldType, ReservationFormState, RoomOption } from "./types";
 
   let {
     rooms,
     initialRoomId = "",
+    lockedRoomId = "",
     onSave,
     onClose,
   }: {
     rooms: RoomOption[];
     initialRoomId?: string;
+    /** Set when the form was opened from a room card's Reserve button — the
+     *  room is shown as a static line and cannot be changed
+     *  (reserve-room-lock-spec.md §4). Empty = general flow, free room pick. */
+    lockedRoomId?: string;
     onSave: (form: ReservationFormState) => Promise<string | null>;
     onClose: () => void;
   } = $props();
@@ -20,23 +32,36 @@
   // Mounted per-open via {#if} in the page — props are only read once at
   // initialization, so untrack() makes that one-time capture explicit.
   let form = $state<ReservationFormState>(
-    untrack(() => ({
-      name: "",
-      contact: "",
-      room_id: initialRoomId,
-      reservation_date: "",
-      target_move_in_date: "",
-      hold_type: "whole",
-      bed_count: "1",
-      deposit: "",
-    }))
+    untrack(() => {
+      // Room-card entry locks the room AND defaults the hold type to "One bed"
+      // when the locked room is partially occupied ("Whole room" is invalid
+      // there — spec §5.5).
+      const locked = lockedRoomId
+        ? rooms.find((r) => String(r.id) === String(lockedRoomId))
+        : undefined;
+      const wholeInvalid = locked ? holdOptionDisabled(locked, "whole") : false;
+      return {
+        name: "",
+        contact: "",
+        room_id: lockedRoomId || initialRoomId,
+        reservation_date: "",
+        target_move_in_date: "",
+        hold_type: locked && wholeInvalid ? "bed" : "whole",
+        bed_count: "1",
+        deposit: "",
+      };
+    })
   );
   let formError: string | null = $state(null);
 
-  /** Beds a room still has free (occupied beds + partial holds counted against capacity). */
-  function remainingBeds(room: RoomOption): number {
-    return room.capacity - room.occupied_beds - room.held_beds;
-  }
+  /** The room all capacity gating judges against: the LOCKED room when this
+   *  modal was opened from a room card, else the room picked in the select
+   *  (undefined in the general flow until one is chosen). */
+  const gatedRoom = $derived(
+    lockedRoomId
+      ? rooms.find((r) => String(r.id) === String(lockedRoomId))
+      : rooms.find((r) => String(r.id) === String(form.room_id))
+  );
 
   /** Beds the current form would hold; null for a whole-room hold. While a
    *  custom count is still untyped, fall back to 1 so the room list doesn't
@@ -49,19 +74,8 @@
   }
   const requestedBeds = $derived(requestedBedCount());
 
-  function roomAvailableFor(room: RoomOption, holdType: HoldType, beds: number | null): boolean {
-    if (room.maintenance === 1) return false;
-    // A whole-room hold needs a completely vacant room (no tenants, no holds).
-    if (holdType === "whole") {
-      return room.occupied_beds === 0 && room.held_beds === 0 && room.has_whole_hold === 0;
-    }
-    if (room.has_whole_hold === 1) return false;
-    if (beds == null || !Number.isInteger(beds) || beds < 1) return false;
-    return beds <= remainingBeds(room);
-  }
-
   const availableRooms = $derived(
-    rooms.filter((r) => roomAvailableFor(r, form.hold_type, requestedBeds))
+    rooms.filter((r) => roomFitsHold(r, form.hold_type, requestedBeds))
   );
 
   function roomLabel(room: RoomOption): string {
@@ -80,10 +94,31 @@
     return rooms.find((r) => String(r.id) === String(form.room_id));
   }
 
-  function holdTypeChanged() {
-    const room = selectedRoom();
-    if (room && !roomAvailableFor(room, form.hold_type, requestedBeds)) form.room_id = "";
-  }
+  // If the gated room is partially occupied while "Whole room" is selected
+  // (a race, or a room change in the general flow), move the selection to the
+  // always-valid "One bed" instead of leaving an unsavable state (§5.5).
+  $effect(() => {
+    if (form.hold_type === "whole" && gatedRoom && holdOptionDisabled(gatedRoom, "whole")) {
+      form.hold_type = "bed";
+    }
+  });
+
+  /** Parsed custom bed count (NaN while untyped) — only consulted for "custom". */
+  const parsedBedCount = $derived(Number(form.bed_count));
+
+  /** Save is disabled ONLY for capacity-invalid selections (§5.3); a locked
+   *  room that vanished also blocks (nothing to save against). */
+  const saveBlocked = $derived(
+    (lockedRoomId !== "" && !gatedRoom) ||
+      saveDisabledForCapacity(gatedRoom, form.hold_type, parsedBedCount)
+  );
+
+  /** Short hint under the Hold Type control explaining a disabled selection. */
+  const hintText = $derived(
+    lockedRoomId !== "" && !gatedRoom
+      ? "Selected room no longer exists."
+      : capacityHint(gatedRoom, form.hold_type, parsedBedCount)
+  );
 
   function validate(): string | null {
     if (!form.name.trim()) return "Name is required.";
@@ -162,10 +197,10 @@
 
     <label>
       Hold Type
-      <select bind:value={form.hold_type} onchange={holdTypeChanged}>
-        <option value="whole">Whole room</option>
-        <option value="bed">One bed</option>
-        <option value="custom">Custom (choose beds)</option>
+      <select bind:value={form.hold_type}>
+        <option value="whole" disabled={holdOptionDisabled(gatedRoom, "whole")}>Whole room</option>
+        <option value="bed" disabled={holdOptionDisabled(gatedRoom, "bed")}>One bed</option>
+        <option value="custom" disabled={holdOptionDisabled(gatedRoom, "custom")}>Custom (choose beds)</option>
       </select>
     </label>
 
@@ -175,6 +210,7 @@
         <input
           type="number"
           min="1"
+          max={gatedRoom ? Math.max(0, remainingBeds(gatedRoom)) : undefined}
           step="1"
           placeholder="e.g. 2"
           bind:value={form.bed_count}
@@ -182,22 +218,40 @@
       </label>
     {/if}
 
+    {#if hintText}
+      <p class="form-error capacity-hint">{hintText}</p>
+    {/if}
+
     <label>
       Holding deposit (₱, optional)
       <input type="number" min="0" step="0.01" placeholder="e.g. 500" bind:value={form.deposit} />
     </label>
 
-    <label class="span-2">
-      Room
-      <select bind:value={form.room_id}>
-        <option value="" disabled>Select room…</option>
-        {#each availableRooms as room (room.id)}
-          <option value={String(room.id)}>{roomLabel(room)}</option>
-        {/each}
-      </select>
-    </label>
+    {#if lockedRoomId}
+      {@const locked = gatedRoom}
+      <div class="span-2 room-field">
+        <span class="room-field-label">Room</span>
+        {#if locked}
+          <span class="locked-room">
+            {locked.room_number} — {locked.occupied_beds}/{locked.capacity} occupied · {Math.max(0, remainingBeds(locked))} bed{remainingBeds(locked) === 1 ? "" : "s"} free
+          </span>
+        {:else}
+          <span class="locked-room">Room unavailable</span>
+        {/if}
+      </div>
+    {:else}
+      <label class="span-2">
+        Room
+        <select bind:value={form.room_id}>
+          <option value="" disabled>Select room…</option>
+          {#each availableRooms as room (room.id)}
+            <option value={String(room.id)}>{roomLabel(room)}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
 
-    {#if form.room_id && selectedRoom() && !roomAvailableFor(selectedRoom()!, form.hold_type, requestedBeds)}
+    {#if gatedRoom && !roomFitsHold(gatedRoom, form.hold_type, requestedBeds)}
       <p class="form-error">That room is no longer available for a {holdTypeLabel(form.hold_type)} hold.</p>
     {/if}
 
@@ -217,7 +271,7 @@
 
     <div class="form-actions">
       <button type="button" class="btn" onclick={onClose}>Cancel</button>
-      <button type="submit" class="btn btn-primary">Save Reservation</button>
+      <button type="submit" class="btn btn-primary" disabled={saveBlocked}>Save Reservation</button>
     </div>
   </form>
 </div>
@@ -273,5 +327,39 @@
   .res-form select:focus {
     outline: 2px solid var(--accent);
     border-color: transparent;
+  }
+
+  /* ---- locked-room read-only line (reserve-room-lock-spec.md §4) ---- */
+  .room-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--label-2);
+  }
+
+  .room-field-label {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--label-2);
+  }
+
+  .locked-room {
+    box-sizing: border-box;
+    border-radius: 10px;
+    border: 1px solid var(--separator);
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--label);
+    background: var(--fill);
+  }
+
+  /* ---- capacity hint (amber, below the hold-type control) ---- */
+  .capacity-hint {
+    margin: 0;
+    color: var(--amber-deep);
   }
 </style>

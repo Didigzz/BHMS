@@ -5,10 +5,13 @@
   import { ROOM_STATUS_SQL } from "$lib/room-status";
   import { getPaymentStatus } from "$lib/payment-status";
   import { pushToast } from "$lib/toast.svelte";
+  import { insertReservation } from "$lib/reservations";
   import RoomFormModal from "./RoomFormModal.svelte";
   import RoomCard from "./RoomCard.svelte";
   import RoomDetailSheet from "$lib/components/RoomDetailSheet.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
+  import ReservationFormModal from "../reservations/ReservationFormModal.svelte";
+  import type { ReservationFormState } from "../reservations/types";
   import type { Room, RoomFilter, RoomFormState, RoomTenant, RoomTenantChip } from "./types";
 
   const FILTERS: { key: RoomFilter; label: string }[] = [
@@ -27,6 +30,10 @@
 
   // Boarder detail sheet — which room's boarders are on display (read-only).
   let detailRoom: Room | null = $state(null);
+
+  // Room-card Reserve flow: the room whose reservation form is open. The form
+  // mounts as a modal ON this page (no navigation) with the room locked.
+  let reserveRoom: Room | null = $state(null);
 
   // Rooms with at least one active tenant whose payment status is red.
   const overdueRoomIds = $derived(
@@ -148,6 +155,26 @@
     }
   }
 
+  /** Persist a reservation from the room-card Reserve flow (room locked). */
+  async function saveReservation(form: ReservationFormState): Promise<string | null> {
+    try {
+      const db = await getDb();
+      const err = await insertReservation(db, form);
+      if (err) {
+        pushToast(err, "error");
+        return err;
+      }
+      // Refresh the cards so the room's held beds / status update immediately.
+      await loadRooms();
+      pushToast(`Reservation added — ${form.name.trim()}`, "success");
+      return null;
+    } catch (e) {
+      const msg = `Failed to save reservation: ${String(e)}`;
+      pushToast(msg, "error");
+      return msg;
+    }
+  }
+
   async function remove(room: Room) {
     if (room.occupied_beds > 0) {
       reportError(`Cannot delete ${room.room_number}: it has ${room.occupied_beds} bed${room.occupied_beds === 1 ? "" : "s"} occupied. Move them out first.`);
@@ -235,6 +262,17 @@
     />
   {/if}
 
+  {#if reserveRoom}
+    {@const locked = reserveRoom}
+    <ReservationFormModal
+      rooms={rooms}
+      initialRoomId={String(locked.id)}
+      lockedRoomId={String(locked.id)}
+      onSave={saveReservation}
+      onClose={() => (reserveRoom = null)}
+    />
+  {/if}
+
   {#if detailRoom}
     <RoomDetailSheet room={detailRoom} onClose={() => (detailRoom = null)} />
   {/if}
@@ -268,6 +306,7 @@
           onView={(r) => (detailRoom = r)}
           onEdit={openEdit}
           onDelete={remove}
+          onReserve={(r) => (reserveRoom = r)}
           onManageTenants={(r) => goto(`/tenants?room=${r.id}`)}
         />
       {/each}

@@ -3,6 +3,7 @@
   import { page } from "$app/state";
   import { getDb } from "$lib/db";
   import { phpPesoPrecise } from "$lib/format";
+  import { insertReservation } from "$lib/reservations";
   import { pushToast } from "$lib/toast.svelte";
   import ReservationFormModal from "./ReservationFormModal.svelte";
   import ConvertModal from "./ConvertModal.svelte";
@@ -75,31 +76,18 @@
   async function saveReservation(form: ReservationFormState): Promise<string | null> {
     try {
       const db = await getDb();
-      // The form field is a number input — Svelte binds it as a number (or
-      // undefined when empty), so accept both and normalize to null/₱ value.
-      const deposit =
-        form.deposit == null || String(form.deposit).trim() === "" ? null : Number(form.deposit);
-      // 'whole' holds the entire room (no bed count); 'bed' is exactly one;
-      // 'custom' carries the bed count the landlord typed in the form.
-      const bedCount =
-        form.hold_type === "whole" ? null : form.hold_type === "bed" ? 1 : Number(form.bed_count);
-      await db.execute(
-        "INSERT INTO reservations (room_id, name, contact, reservation_date, target_move_in_date, hold_type, bed_count, deposit) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
-        [Number(form.room_id), form.name.trim(), form.contact.trim(), form.reservation_date, form.target_move_in_date, form.hold_type, bedCount, deposit]
-      );
+      const err = await insertReservation(db, form);
+      if (err) {
+        pushToast(err, "error");
+        return err;
+      }
       await loadData();
       pushToast(`Reservation added — ${form.name.trim()}`, "success");
       return null;
     } catch (e) {
-      const msg = String(e);
-      let friendly: string;
-      if (msg.toLowerCase().includes("under maintenance")) friendly = "That room is under maintenance.";
-      else if (msg.toLowerCase().includes("already has tenants")) friendly = "That room already has tenants — choose a bed hold instead.";
-      else if (msg.toLowerCase().includes("reserved")) friendly = "That room already has a conflicting hold.";
-      else if (msg.toLowerCase().includes("full capacity")) friendly = "That room has no beds left.";
-      else friendly = `Failed to save reservation: ${msg}`;
-      pushToast(friendly, "error");
-      return friendly;
+      const msg = `Failed to save reservation: ${String(e)}`;
+      pushToast(msg, "error");
+      return msg;
     }
   }
 
