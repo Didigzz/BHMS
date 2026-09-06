@@ -20,7 +20,9 @@
     "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-sql": "^2.4.0",
-    "html-to-image": "^1.11.13"
+    "html-to-image": "^1.11.13",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.6",

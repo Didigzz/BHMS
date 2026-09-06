@@ -11,6 +11,14 @@ export function formatDate(iso: string): string {
   return `${m}/${d}/${y}`;
 }
 
+/** Format an ISO date string ("YYYY-MM-DD") as "Mon DD" (e.g. "Apr 27"); empty → "—". */
+export function formatShortDay(iso: string): string {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 const phpPesoFormatter = new Intl.NumberFormat("en-PH", {
   style: "currency",
   currency: "PHP",

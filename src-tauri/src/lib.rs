@@ -372,6 +372,27 @@ fn migrations() -> Vec<Migration> {
             "seed_settings_deposit_refund_allowed",
             include_str!("../migrations/061-seed_settings_deposit_refund_allowed.sql"),
         ),
+        // Sales Report (sales-report-spec.md): a manual `total_capacity`
+        // setting (beds) seeds the occupancy denominator, and tenants gain an
+        // exact `deposit_refunded_amount` so the report nets out the real cash
+        // returned at move-out (NOT NULL DEFAULT 0; legacy refunds are
+        // approximated with deposit_amount in v64 — exact history is
+        // unrecoverable because refundDeposit() never stored it).
+        migration(
+            62,
+            "seed_settings_total_capacity",
+            include_str!("../migrations/062-seed_settings_total_capacity.sql"),
+        ),
+        migration(
+            63,
+            "add_deposit_refunded_amount_to_tenants",
+            include_str!("../migrations/063-add_deposit_refunded_amount_to_tenants.sql"),
+        ),
+        migration(
+            64,
+            "backfill_deposit_refunded_amount",
+            include_str!("../migrations/064-backfill_deposit_refunded_amount.sql"),
+        ),
     ]
 }
 
@@ -457,6 +478,14 @@ fn repair_migrations(app: tauri::AppHandle) -> Result<usize, String> {
 #[cfg(target_os = "android")]
 struct GalleryHandle(tauri::plugin::PluginHandle<tauri::Wry>);
 
+/// Holds the Android PDFSaver plugin handle (registered on mobile so a Rust
+/// command can write a sales-report PDF into the Downloads folder via
+/// MediaStore.Downloads — see gen/android/app/src/main/java/com/rentease/app/
+/// PDFSaver.kt). On desktop this state is never created — the command falls
+/// back to writing the file into the Downloads folder directly.
+#[cfg(target_os = "android")]
+struct PdfHandle(tauri::plugin::PluginHandle<tauri::Wry>);
+
 /// Persist a receipt image for the user: Android → device gallery (Photos),
 /// desktop → Downloads folder. `base64` is the raw PNG bytes (no data: URL
 /// prefix) and `fileName` the archive name, both produced by src/lib/share.ts.
@@ -487,6 +516,48 @@ async fn save_receipt_to_gallery(
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(&base64)
             .map_err(|e| format!("invalid image data: {e}"))?;
+        let dir = app
+            .path()
+            .download_dir()
+            .map_err(|e| format!("could not locate Downloads: {e}"))?;
+        let path = dir.join(&file_name);
+        std::fs::write(&path, &bytes).map_err(|e| format!("could not write file: {e}"))?;
+        Ok("downloaded".into())
+    }
+}
+
+/// Persist a sales-report PDF for the user: Android → Downloads via the Kotlin
+/// PDFSaver plugin (MediaStore.Downloads, runtime permission request on
+/// API 24-28), desktop → Downloads folder. `base64` is the raw PDF bytes (no
+/// data: URL prefix) and `fileName` the `sales-report-YYYY-MM(.pdf)` name, both
+/// produced by src/lib/pdf-export.ts.
+#[tauri::command]
+async fn save_pdf_to_downloads(
+    app: tauri::AppHandle,
+    base64: String,
+    file_name: String,
+) -> Result<String, String> {
+    #[cfg(target_os = "android")]
+    {
+        use tauri::Manager;
+        let state = app.state::<PdfHandle>();
+        let _uri = state
+            .0
+            .run_mobile_plugin::<serde_json::Value>(
+                "savePdf",
+                serde_json::json!({ "base64": base64, "fileName": file_name }),
+            )
+            .map_err(|e| format!("PDFSaver: {e}"))?;
+        return Ok("saved-to-downloads".into());
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        use base64::Engine;
+        use tauri::Manager;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&base64)
+            .map_err(|e| format!("invalid pdf data: {e}"))?;
         let dir = app
             .path()
             .download_dir()
@@ -529,9 +600,28 @@ pub fn run() {
                 })
                 .build(),
         )
+        // Registers the Kotlin PDFSaver plugin so `save_pdf_to_downloads` can
+        // write the sales-report PDF into Downloads via MediaStore.Downloads
+        // (see gen/android/app/src/main/java/com/rentease/app/PDFSaver.kt).
+        // No-op on desktop.
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry, ()>::new("pdf-saver")
+                .setup(|_app, _api| {
+                    #[cfg(target_os = "android")]
+                    {
+                        use tauri::Manager;
+                        let handle =
+                            _api.register_android_plugin("com.rentease.app", "PDFSaver")?;
+                        _app.manage(PdfHandle(handle));
+                    }
+                    Ok(())
+                })
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             repair_migrations,
-            save_receipt_to_gallery
+            save_receipt_to_gallery,
+            save_pdf_to_downloads
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

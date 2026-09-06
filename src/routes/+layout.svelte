@@ -37,7 +37,7 @@
   </a>
 </nav>
 
-<a href="/settings" class="gear" aria-label="Settings" class:active={page.url.pathname === "/settings"}>
+<a href="/settings" class="gear" aria-label="Settings" class:active={page.url.pathname.startsWith("/settings")}>
   <span class="gear-icon">⚙</span>
 </a>
 

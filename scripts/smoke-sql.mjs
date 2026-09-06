@@ -246,6 +246,14 @@ const reminderDays = db.prepare("SELECT value FROM settings WHERE key = ?").get(
 assert(reminderDays === "3", `reminder_days seeded = ${reminderDays}`);
 const enabled = db.prepare("SELECT value FROM settings WHERE key = ?").get("notifications_enabled").value;
 assert(enabled === "1", `notifications_enabled seeded = ${enabled}`);
+// Sales-report total capacity (v062): seeded from the sum of room capacities
+// (0 rooms when the migration ran on this script's empty DB). Re-run the seed's
+// SUM against the real seeded rooms (2+1+1 = 4) to lock in the semantics — the
+// landlord then edits the value freely in Settings.
+const totalCapacity = db.prepare("SELECT value FROM settings WHERE key = ?").get("total_capacity").value;
+assert(totalCapacity === "0", `total_capacity seeded from room capacity sum at migration time (${totalCapacity})`);
+const roomCapacitySum = db.prepare("SELECT COALESCE(SUM(capacity), 0) AS n FROM rooms").get().n;
+assert(roomCapacitySum === 4, `total_capacity seed SQL sums room capacities (${roomCapacitySum})`);
 
 console.log("\nPayment cascade on permanent tenant delete…");
 const delId = db.prepare("SELECT id FROM tenants WHERE name = 'T6'").get().id;
@@ -442,6 +450,23 @@ assert(house === "RentEase", `house_name seeded = ${house}`);
 // deposit-refund-allowed setting seed (v61).
 const refundSetting = db.prepare("SELECT value FROM settings WHERE key = ?").get("deposit_refund_allowed").value;
 assert(refundSetting === "1", `deposit_refund_allowed seeded = ${refundSetting}`);
+
+// deposit-refunded-amount (v063/064): the exact refund column is NOT NULL
+// DEFAULT 0, and the backfill copies deposit_amount for already-refunded rows
+// (refundDeposit() never stored the exact amount before v63).
+const t7RefundAmount = db
+  .prepare("SELECT deposit_refunded_amount FROM tenants WHERE name = 'T7'")
+  .get().deposit_refunded_amount;
+assert(t7RefundAmount === 0, `deposit_refunded_amount defaults to 0 (T7 = ${t7RefundAmount})`);
+db.prepare("UPDATE tenants SET deposit_refunded_amount = 0 WHERE name = 'T7'").run();
+db.exec(readFileSync(join(MIGRATIONS_DIR, "064-backfill_deposit_refunded_amount.sql"), "utf8"));
+const t7RefundedBackfilled = db
+  .prepare("SELECT deposit_refunded_amount FROM tenants WHERE name = 'T7'")
+  .get().deposit_refunded_amount;
+assert(
+  t7RefundedBackfilled === 2000,
+  `v064 backfill copies deposit_amount into deposit_refunded_amount for refunded tenants (${t7RefundedBackfilled})`
+);
 
 console.log("\nApp query schema check (regression guard)…");
 // Executes the app's REAL page SQL against the migrated schema so a query

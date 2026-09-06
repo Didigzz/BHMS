@@ -321,7 +321,17 @@ export async function markMovedOut(db: Database, tenantId: number): Promise<void
  * Mark a tenant's deposit as refunded: the deposit pot is returned to the
  * tenant (deposit_held → 0). Advance money is never refundable, so
  * `advance_held` is left untouched.
+ *
+ * The exact cash returned (deposit_held BEFORE zeroing it) is captured into
+ * `deposit_refunded_amount` (sales-report-spec.md §4.4). That number is what
+ * the Sales Report subtracts from sales in the tenant's move-out period —
+ * whole months are applied whole, so deposit_held at refund time is
+ * unambiguous. (Legacy refunds backfilled before this column existed use
+ * deposit_amount as a best guess; see migration 064.)
  */
 export async function refundDeposit(db: Database, tenantId: number): Promise<void> {
-  await db.execute("UPDATE tenants SET deposit_refunded=1, deposit_held=0 WHERE id=$1", [tenantId]);
+  await db.execute(
+    "UPDATE tenants SET deposit_refunded_amount = deposit_held, deposit_refunded=1, deposit_held=0 WHERE id=$1",
+    [tenantId]
+  );
 }

@@ -4,6 +4,7 @@
   import NotificationsSection from "./NotificationsSection.svelte";
   import HouseNameSection from "./HouseNameSection.svelte";
   import DepositRefundSection from "./DepositRefundSection.svelte";
+  import ReportsSection from "./ReportsSection.svelte";
 
   // Page-level status banner shared by the section components: a section
   // reports via onError/onNote and the page renders one banner at the top.
@@ -40,6 +41,8 @@
       Data stays on this phone — export a backup to keep it safe or move it to another phone.
     </p>
   </div>
+
+  <ReportsSection onError={(m) => (error = m)} />
 </main>
 
 <style>
