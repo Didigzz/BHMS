@@ -16,7 +16,9 @@
  * The existing PNG receipt flow (html-to-image + GallerySaver) stays untouched.
  */
 
+import type { UserOptions } from "jspdf-autotable";
 import { isTauri } from "./db";
+import { roomLabel } from "./format";
 
 /** Everything the PDF needs — mirrors what the report page already computed. */
 export interface SalesReportPdfData {
@@ -60,9 +62,41 @@ function shortDay(iso: string): string {
   return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-/** "Mon DD" + a stable sort key (date ISO) for the PDF table rows. */
-function rowFor(e: { name: string; date: string; room: string; rate: number }) {
-  return { name: e.name, date: shortDay(e.date), sortKey: e.date, room: `Room ${e.room}`, rate: `${peso(e.rate)}/mo` };
+/**
+ * One body row of a Move-ins / Move-outs PDF table, as a plain ARRAY — the
+ * canonical jspdf-autotable body shape. (Passing objects here was the bug
+ * behind the blank PDF rows: with a string-array head, autotable gives the
+ * columns numeric dataKeys and reads object rows via `row[0]…`, which are
+ * undefined. See sales-report-pdf-names-spec.md §3.)
+ */
+function listRowCells(e: { name: string; date: string; room: string; rate: number }): string[] {
+  return [e.name, shortDay(e.date), roomLabel(e.room), `${peso(e.rate)}/mo`];
+}
+
+/**
+ * Shared autotable options for the Move-ins / Move-outs tables — exported so
+ * the render-level test (pdf-export.test.ts) exercises the exact production
+ * configuration through the real jspdf-autotable path.
+ */
+export function moveListTableOptions(
+  rows: SalesReportPdfData["moveIns"],
+  startY: number
+): UserOptions {
+  return {
+    startY,
+    margin: { left: MARGIN, right: MARGIN },
+    head: [["Name", "Date", "Room", "Rate"]],
+    body: rows.map(listRowCells),
+    theme: "striped",
+    headStyles: { fillColor: ACCENT, textColor: 255, fontStyle: "bold", fontSize: 9 },
+    styles: { fontSize: 9, cellPadding: 4 },
+    columnStyles: {
+      0: { cellWidth: "auto" },
+      1: { cellWidth: 60 },
+      2: { cellWidth: 80 },
+      3: { cellWidth: 80 },
+    },
+  };
 }
 
 /**
@@ -155,9 +189,6 @@ export async function generateSalesReportPdf(data: SalesReportPdfData): Promise<
   y += 18;
 
   /* ---- move-ins / move-outs tables ---- */
-  const tableRows = (rows: typeof data.moveIns) => rows.map(rowFor).map(({ sortKey, ...r }) => r);
-  const head = [["Name", "Date", "Room", "Rate"]];
-
   const drawList = (title: string, rows: typeof data.moveIns, startY: number) => {
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
@@ -172,21 +203,7 @@ export async function generateSalesReportPdf(data: SalesReportPdfData): Promise<
       doc.text(none, MARGIN, cursor + 10);
       return cursor + 24;
     }
-    const finalY = drawTable(doc, {
-      startY: cursor,
-      margin: { left: MARGIN, right: MARGIN },
-      head,
-      body: tableRows(rows),
-      theme: "striped",
-      headStyles: { fillColor: ACCENT, textColor: 255, fontStyle: "bold", fontSize: 9 },
-      styles: { fontSize: 9, cellPadding: 4 },
-      columnStyles: {
-        0: { cellWidth: "auto" },
-        1: { cellWidth: 60 },
-        2: { cellWidth: 80 },
-        3: { cellWidth: 80 },
-      },
-    });
+    const finalY = drawTable(doc, moveListTableOptions(rows, cursor));
     return finalY + 18;
   };
 
