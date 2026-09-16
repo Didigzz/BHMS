@@ -1,0 +1,1 @@
+ALTER TABLE tenants ADD COLUMN amenity_balance REAL NOT NULL DEFAULT 0
