@@ -10,6 +10,8 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "test": "vitest run",
+    "smoke:sql": "node scripts/smoke-sql.mjs",
+    "smoke:backup": "node scripts/smoke-backup.mjs",
     "test:watch": "vitest",
     "tauri": "tauri"
   },

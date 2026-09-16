@@ -131,6 +131,15 @@ function insertTenantBeds(db, name, roomId, beds) {
   ).run(name, "0917-000-0000", roomId, "2026-08-01", "2026-09-01", beds);
 }
 
+// Already-boarding backfill (v065+): mirrors the app's Add-modal "Already
+// boarding?" save — beds_occupied plus the invisible backfilled flag that
+// lets the recreated capacity trigger (v067) skip ALL room checks.
+function insertBackfilledTenant(db, name, roomId, beds = 1) {
+  db.prepare(
+    "INSERT INTO tenants (name, contact, room_id, move_in_date, due_date, beds_occupied, backfilled) VALUES (?,?,?,?,?,?,?)"
+  ).run(name, "0917-000-0000", roomId, "2026-08-01", "2026-09-01", beds, 1);
+}
+
 function insertReservation(db, roomId, name, holdType, bedCount) {
   db.prepare(
     "INSERT INTO reservations (room_id, name, contact, reservation_date, target_move_in_date, hold_type, bed_count) VALUES (?,?,?,?,?,?,?)"
@@ -412,6 +421,59 @@ const roomRHolds = db
   .prepare("SELECT COALESCE(SUM(bed_count), 0) AS n FROM reservations WHERE room_id = ? AND status = 'active'")
   .get(roomR).n;
 assert(roomRHolds === 3, `3-bed custom hold fits after the move-out (${roomRHolds}/4 held)`);
+
+console.log("\nAlready-boarding backfill (v65-67)…");
+// The recreated capacity trigger must skip ALL room checks for backfilled=1
+// inserts (the tenant is already physically in the room) while keeping every
+// guard for normal inserts. New rooms start at id 12.
+db.prepare("INSERT INTO rooms (room_number, capacity, monthly_rate) VALUES ('Room BF1', 1, 1000)").run();
+const bf1 = db.prepare("SELECT id FROM rooms WHERE room_number = 'Room BF1'").get().id;
+insertTenant(db, "BF1-T1", bf1); // 1/1 → full
+st = db.prepare(`SELECT ${ROOM_STATUS_SQL} AS status FROM rooms r WHERE r.id = ?`).get(bf1).status;
+assert(st === "Occupied", `Room BF1 with one tenant → ${st}`);
+expectAbort(db, "normal second tenant into full Room BF1 is blocked", "Room is at full capacity", () =>
+  insertTenant(db, "BF1-T2", bf1)
+);
+insertBackfilledTenant(db, "BF1-Existing", bf1); // backfilled=1 → allowed
+st = db.prepare(`SELECT ${ROOM_STATUS_SQL} AS status FROM rooms r WHERE r.id = ?`).get(bf1).status;
+assert(st === "Occupied", `Room BF1 after backfilled insert → ${st}`);
+
+// Maintenance room: normal insert blocked, backfilled insert allowed.
+db.prepare("INSERT INTO rooms (room_number, capacity, monthly_rate) VALUES ('Room BF2', 1, 1000)").run();
+const bf2 = db.prepare("SELECT id FROM rooms WHERE room_number = 'Room BF2'").get().id;
+db.prepare("UPDATE rooms SET maintenance = 1 WHERE id = ?").run(bf2);
+expectAbort(db, "normal tenant into maintenance Room BF2 is blocked", "Room is under maintenance", () =>
+  insertTenant(db, "BF2-T", bf2)
+);
+insertBackfilledTenant(db, "BF2-Existing", bf2); // backfilled=1 → allowed
+db.prepare("UPDATE rooms SET maintenance = 0 WHERE id = ?").run(bf2);
+
+// Whole-reserved room: normal insert blocked, backfilled insert allowed.
+db.prepare("INSERT INTO rooms (room_number, capacity, monthly_rate) VALUES ('Room BF3', 1, 1000)").run();
+const bf3 = db.prepare("SELECT id FROM rooms WHERE room_number = 'Room BF3'").get().id;
+insertReservation(db, bf3, "BF3-Hold", "whole", null);
+expectAbort(db, "normal tenant into whole-reserved Room BF3 is blocked", "Room is reserved", () =>
+  insertTenant(db, "BF3-T", bf3)
+);
+insertBackfilledTenant(db, "BF3-Existing", bf3); // backfilled=1 → allowed
+
+// Multi-bed backfill: beds beyond the free space are accepted too (the tenant
+// occupies them in reality); the backfilled flag is persisted.
+insertBackfilledTenant(db, "BF1-Multi", bf1, 3); // 1-bed room now holds a 3-bed tenant
+const bf1Flag = db.prepare("SELECT backfilled FROM tenants WHERE name = 'BF1-Multi'").get().backfilled;
+assert(bf1Flag === 1, `backfilled flag persisted (BF1-Multi = ${bf1Flag})`);
+const bf1NormalFlag = db.prepare("SELECT backfilled FROM tenants WHERE name = 'BF1-T1'").get().backfilled;
+assert(bf1NormalFlag === 0, `normal inserts default backfilled to 0 (BF1-T1 = ${bf1NormalFlag})`);
+
+// Editing (room change) is NOT relaxed: moving the backfilled tenant to
+// another full room must still be blocked by the v056 room-change trigger.
+db.prepare("INSERT INTO rooms (room_number, capacity, monthly_rate) VALUES ('Room BF4', 1, 1000)").run();
+const bf4 = db.prepare("SELECT id FROM rooms WHERE room_number = 'Room BF4'").get().id;
+insertTenant(db, "BF4-T1", bf4); // 1/1 → full
+const bf1MultiId = db.prepare("SELECT id FROM tenants WHERE name = 'BF1-Multi'").get().id;
+expectAbort(db, "moving a backfilled tenant into full Room BF4 is blocked", "Room is at full capacity", () =>
+  db.prepare("UPDATE tenants SET room_id = ? WHERE id = ?").run(bf4, bf1MultiId)
+);
 
 console.log("\nBilling columns (v31-38)…");
 // tenants.monthly_rate — the migrations ran on an empty DB, so re-run the
