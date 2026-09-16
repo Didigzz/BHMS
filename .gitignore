@@ -14,3 +14,6 @@ vite.config.ts.timestamp-*
 # Generated mobile projects (Android/iOS) — regenerate via `tauri android init` / `tauri ios init`
 /src-tauri/gen/android
 /src-tauri/gen/ios
+.omo/
+# local dev db (tracked historically, but skip future adds)
+.freebuff/
