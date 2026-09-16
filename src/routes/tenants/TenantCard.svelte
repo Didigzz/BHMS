@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getPaymentStatus, paymentLabel } from "$lib/payment-status";
-  import { roomLabel } from "$lib/format";
+  import { roomLabel, phpPesoPrecise } from "$lib/format";
   import type { Tenant } from "./types";
 
   let {
@@ -56,6 +56,9 @@
       <span class="pay-badge pay-{status}" title={statusLabel}>
         {statusLabel}
       </span>
+    {/if}
+    {#if (tenant.amenity_balance ?? 0) > 0}
+      <span class="pay-badge" style="background: var(--fill); color: var(--label-2);" title="Amenity Balance">Amenity {phpPesoPrecise(tenant.amenity_balance)}</span>
     {/if}
   </button>
 

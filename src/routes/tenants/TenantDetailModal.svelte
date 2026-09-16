@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { modalMaterial } from "$lib/motion";
   import { formatDate, phpPesoPrecise, roomLabel } from "$lib/format";
+  import { getPaymentStatus, dueDateRowLabel } from "$lib/payment-status";
   import { pushOverlay } from "$lib/back-stack";
   import type { Tenant } from "./types";
 
@@ -20,6 +21,19 @@
   });
 
   const totalHeld = $derived(tenant.advance_held + tenant.deposit_held);
+
+  // Payment status drives the title color (text-only): green/current names
+  // stay plain, due-soon turns amber, due/overdue turns red
+  // (tenant-name-status-spec.md §3.4).
+  const paymentStatus = $derived(getPaymentStatus(tenant.due_date, new Date(), tenant.last_paid_date));
+
+  // Due-row label mirrors the room modal (due-date-status-fix-spec.md §3.6):
+  // active tenants get the dynamic Due soon/Due/Due today/Overdue label;
+  // archived tenants keep the static "Due" row (historical record, no live
+  // status).
+  const dueRowLabel = $derived(
+    tenant.moved_out_date ? "Due" : dueDateRowLabel(tenant.due_date, new Date(), tenant.last_paid_date)
+  );
 
   /** Backdrop tap closes, but only when the tap lands on the dim overlay itself. */
   function onOverlayClick(e: MouseEvent) {
@@ -42,7 +56,7 @@
   <div class="detail-panel">
     <div class="detail-header">
       <div class="detail-title">
-        <h2>{tenant.name}</h2>
+        <h2 class:title-red={paymentStatus === "red"} class:title-yellow={paymentStatus === "yellow"}>{tenant.name}</h2>
         <p class="history-subtitle">{roomLabel(tenant.room_number)}</p>
       </div>
       <button type="button" class="detail-close" aria-label="Close" onclick={onClose}>✕</button>
@@ -62,7 +76,7 @@
       </div>
 
       <div class="detail-row">
-        <span class="row-label">Due</span>
+        <span class="row-label">{dueRowLabel}</span>
         <span class="row-value">{formatDate(tenant.due_date)}</span>
       </div>
 
@@ -74,6 +88,11 @@
       <div class="detail-row">
         <span class="row-label">Beds</span>
         <span class="row-value">{tenant.beds_occupied}</span>
+      </div>
+
+      <div class="detail-row">
+        <span class="row-label">Amenity Balance</span>
+        <span class="row-value">{phpPesoPrecise(tenant.amenity_balance ?? 0)}</span>
       </div>
 
       <div class="detail-row">
@@ -138,6 +157,14 @@
     font-size: 1.2rem;
     line-height: 1.25;
     word-break: break-word;
+  }
+
+  /* Payment-status title tint (text only — tenant-name-status-spec.md §3.4). */
+  .detail-title h2.title-yellow {
+    color: var(--amber-deep);
+  }
+  .detail-title h2.title-red {
+    color: var(--red-deep);
   }
 
   .detail-close {

@@ -35,6 +35,8 @@ export interface Tenant {
   /** Remaining deposit money (consumed last; refundable per settings). */
   deposit_held: number;
   moved_out_date: string | null;
+  /** Amenity Balance — sum of unpaid amenity shares (separate from rent). */
+  amenity_balance: number;
 }
 
 export interface PaymentRecord {
@@ -63,5 +65,9 @@ export interface TenantFormState {
   deposit_amount: string;
   /** Advance payment in ₱ (money, not a month count). */
   advance_amount: string;
+  /** Beds the tenant occupies (shown + validated only in "Already boarding?" mode). */
+  beds_occupied: string;
+  /** "Already boarding?" toggle — backfill of a tenant who moved in before the system. */
+  boarding: boolean;
   dueAuto: boolean;
 }

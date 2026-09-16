@@ -35,6 +35,10 @@
     <span class="tab-icon">📅</span>
     <span>Reservations</span>
   </a>
+  <a href="/amenities/billing" class="tab" class:active={page.url.pathname.startsWith("/amenities")}>
+    <span class="tab-icon">🧾</span>
+    <span>Amenities</span>
+  </a>
 </nav>
 
 <a href="/settings" class="gear" aria-label="Settings" class:active={page.url.pathname.startsWith("/settings")}>
