@@ -125,6 +125,8 @@ export interface PreviewShim {
   exec?: (sql: string, values?: unknown[]) => Promise<unknown>;
   exportDb?: () => Uint8Array;
   dbPath?: () => string;
+  /** Restore a `.digal` payload into the preview database (see plugin-sql.ts). */
+  installBackup?: (text: string) => Promise<void>;
   lastNotification?: { title: string; body?: string } | null;
 }
 

@@ -1,75 +1,81 @@
-import { readFile, writeFile, remove, rename } from "@tauri-apps/plugin-fs";
-import { open, save } from "@tauri-apps/plugin-dialog";
-import { getDb, closeDb } from "./db";
-import { setSetting } from "./settings";
-
 /**
- * Backup & restore for the live SQLite database.
+ * Backup & restore (backup-digal-format-spec.md).
  *
- * Export: flush a consistent snapshot (`VACUUM INTO` handles WAL mode),
- * then let the user pick a destination via the native save/share dialog.
- * The path returned by `dialog.save()` is automatically added to the fs
- * scope, so writing to it needs no extra capability; on Android the dialog
- * returns a content URI that the fs plugin understands.
+ * Export: read every app table, build the `.digal` JSON document
+ * (src/lib/backup-format.ts), save it to the device's Downloads folder through
+ * the platform writer, then verify the bytes that actually landed there before
+ * claiming success. Export is strictly read-only for business data — the only
+ * write is the `last_backup_date` bookkeeping setting, and even that happens
+ * only after the file is saved and verified.
  *
- * Import: pick a file, validate the SQLite header, then perform a
- * close → swap → reconnect cycle (see implementation-plan.md §2.4):
- *   1. close the live connection (a WAL database cannot be overwritten
- *      while a connection is open),
- *   2. move the current file aside as `<db>.bak` (rollback point),
- *   3. write the imported file in place,
- *   4. reopen and run `PRAGMA integrity_check`,
- *   5. on failure restore the `.bak`; on success delete it.
+ * Restore: validate the chosen file completely (nothing else is a gate), write a
+ * pre-restore safety copy of the CURRENT data to Downloads, then hand the exact
+ * file text to Rust (`install_backup_file`), which re-validates it, builds a
+ * fresh database from this build's migration chain, loads the rows, verifies
+ * integrity, and only then swaps the file in. A failure before that final swap
+ * leaves the live database untouched.
+ *
+ * Historically this module copied the raw SQLite file through
+ * `dialog.save()` + `fs.writeFile`. That produced files the landlord could not
+ * open (see src/lib/share.ts for the same Android finding — app-private storage
+ * is not readable by other apps) and carried no self-description at all. The
+ * `VACUUM INTO` / checkpoint / `.bak` machinery is intentionally gone.
  */
 
-const SQLITE_HEADER = "SQLite format 3\u0000"; // first 16 bytes of every SQLite file
+import { invoke } from "@tauri-apps/api/core";
+import { readFile } from "@tauri-apps/plugin-fs";
+import { open } from "@tauri-apps/plugin-dialog";
+import { closeDb, getDb, isTauri } from "./db";
+import { getSetting, setSetting } from "./settings";
+import {
+  BACKUP_MESSAGES,
+  REQUIRED_TABLES,
+  buildBackupEnvelope,
+  formatBackupFileName,
+  parseBackupBytes,
+  parseBackupFile,
+  sealBackupEnvelope,
+  serializeBackup,
+  sha256Hex,
+  toBackupTable,
+  utf8Encode,
+  type BackupSnapshot,
+  type BackupTablePayload,
+} from "./backup-format";
 
-// plugin-fs v2 has no base64 option — readFile returns bytes, so convert at the
-// plugin boundary and keep the base64-string contract used across this module.
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(binary);
-}
-
-function base64ToBytes(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
+export type BackupKind = "backup" | "before-restore";
 
 export interface BackupResult {
-  canceled: boolean;
-  path?: string;
+  fileName: string;
+  /** Display location, e.g. `Downloads/RentEase/BHMS-Backup-2026-09-14.digal`. */
+  location: string;
+  /** Device URI of the saved file; empty on desktop/preview (no share sheet). */
+  uri: string;
 }
 
 export interface ChosenBackup {
   filePath: string;
-  dataBase64: string;
   fileName: string;
+  snapshot: BackupSnapshot;
 }
 
-/** Absolute path of the live `boarding-house.db`, reported by SQLite itself. */
-async function liveDbPath(): Promise<string> {
-  const db = await getDb();
-  const rows = await db.select<{ name: string; file: string }[]>(
-    "SELECT * FROM pragma_database_list"
-  );
-  const main = rows.find((r) => r.name === "main");
-  if (!main?.file) throw new Error("Could not locate the database file on this device.");
-  return main.file;
+/** What the Rust/platform writer reports back about the file it just wrote. */
+interface SaveReport {
+  location: string;
+  uri: string;
+  bytes: number;
+  sha256: string;
 }
 
-/** Spec filename convention: `rentease-backup-2026-08-06.db`. */
-function backupFileName(): string {
-  const d = new Date();
-  const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
-  return `rentease-backup-${iso}.db`;
+/** Preview shim hook (src/lib/browser/plugin-sql.ts), present only under RENTEASE_PREVIEW. */
+interface PreviewBackupShim {
+  vfs?: { set: (path: string, bytes: Uint8Array) => Promise<void> };
+  installBackup?: (text: string) => Promise<void>;
+}
+
+function previewShim(): PreviewBackupShim | undefined {
+  if (typeof window === "undefined") return undefined;
+  return (window as unknown as { __shim?: PreviewBackupShim }).__shim;
 }
 
 function todayIso(): string {
@@ -79,10 +85,6 @@ function todayIso(): string {
   ).padStart(2, "0")}`;
 }
 
-function escapeSql(s: string): string {
-  return s.replace(/'/g, "''");
-}
-
 /** Best-effort display name from a filesystem path or Android content URI. */
 function displayName(path: string): string {
   const segments = path.split(/[\\/]/);
@@ -90,178 +92,170 @@ function displayName(path: string): string {
   return last || path;
 }
 
-function isSqliteFile(dataBase64: string): boolean {
-  try {
-    // 16 bytes → 24 base64 chars; decode just enough to check the header.
-    const head = atob(dataBase64.slice(0, 24));
-    return head.startsWith(SQLITE_HEADER);
-  } catch {
-    return false;
-  }
-}
+// ---------------------------------------------------------------------------
+// export
+// ---------------------------------------------------------------------------
 
 /**
- * Cheap schema sniff: SQLite stores the sqlite_master schema text verbatim in
- * the file, so the CREATE TABLE statements from our migrations appear as
- * plaintext. This rejects a valid-but-unrelated SQLite database before the
- * close→swap→reconnect cycle — importing one would otherwise replace the live
- * data and leave no rollback (the .bak is deleted on "success").
+ * Read all six tables. Columns come from `PRAGMA table_info` (so the dump
+ * survives future column additions without a format bump) and rows are ordered
+ * by the table's own identity column for stable, diff-friendly output.
  */
-function isBoardingHouseDb(dataBase64: string): boolean {
-  try {
-    // The schema (sqlite_master) for this small database lives in the first
-    // pages, so decoding a leading slice is enough — and cheaper than the
-    // whole file. Tolerate the `IF NOT EXISTS` variant for robustness.
-    const bytes = base64ToBytes(dataBase64);
-    const head = new TextDecoder().decode(bytes.subarray(0, 64 * 1024));
-    return /CREATE TABLE (?:IF NOT EXISTS )?(?:rooms|tenants)/.test(head);
-  } catch {
-    return false;
-  }
-}
-
-/** Flush pending WAL frames into the main database file. Returns false when the
- * pragma is unsupported or fails — the caller should refuse to export rather
- * than hand the landlord a partial copy. */
-async function checkpointWal(): Promise<boolean> {
-  try {
-    const db = await getDb();
-    await db.execute("PRAGMA wal_checkpoint(TRUNCATE)");
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Read a complete, consistent snapshot of the database as base64 bytes.
- * Returns the data plus a temp snapshot path to clean up (null when the
- * fallback copied the live file directly).
- */
-async function readSnapshot(): Promise<{ data: string; tempPath: string | null }> {
+async function collectTables(): Promise<Record<string, BackupTablePayload>> {
   const db = await getDb();
-  const dbPath = await liveDbPath();
-  const tempPath = dbPath + ".export.tmp";
-  try {
-    // VACUUM INTO produces a fully checkpointed copy — no WAL edge cases.
-    // Remove a stale temp file first: VACUUM INTO errors if the target exists.
-    await removeQuiet(tempPath);
-    await db.execute(`VACUUM INTO '${escapeSql(tempPath)}'`);
-    const data = bytesToBase64(await readFile(tempPath));
-    return { data, tempPath };
-  } catch (e) {
-    // Fallback: flush WAL then copy the live file directly. If the checkpoint
-    // failed, refuse to export rather than produce a partial backup.
-    if (!(await checkpointWal())) {
-      throw new Error(`Could not produce a consistent backup snapshot: ${String(e)}`);
+  const tables: Record<string, BackupTablePayload> = {};
+  for (const table of REQUIRED_TABLES) {
+    const info = await db.select<{ name: string }[]>(`PRAGMA table_info(${table})`);
+    const columns = info.map((c) => c.name);
+    if (columns.length === 0) {
+      throw new Error(`The ${table} table is missing from this database.`);
     }
-    const data = bytesToBase64(await readFile(dbPath));
-    return { data, tempPath: null };
+    const orderBy = table === "settings" ? "key" : "id";
+    const rows = await db.select<Record<string, unknown>[]>(
+      `SELECT * FROM ${table} ORDER BY ${orderBy}`
+    );
+    tables[table] = toBackupTable(columns, rows);
   }
+  return tables;
 }
 
-/** Export the database through the native save/share dialog. */
-export async function exportBackup(): Promise<BackupResult> {
-  const { data, tempPath } = await readSnapshot();
-  const dest = await save({
-    title: "Save backup",
-    defaultPath: backupFileName(),
-    filters: [{ name: "SQLite database", extensions: ["db", "sqlite"] }],
-  });
-  if (!dest) {
-    if (tempPath) await remove(tempPath).catch(() => {});
-    return { canceled: true };
+/** Write the file to Downloads (Rust on device, the preview VFS in the browser). */
+async function saveBackupFile(text: string, fileName: string): Promise<SaveReport> {
+  const bytes = utf8Encode(text);
+  if (!isTauri()) {
+    const shim = previewShim();
+    const path = `Downloads/${fileName}`;
+    if (!shim?.vfs) {
+      throw new Error("Backup files can only be saved in the app.");
+    }
+    await shim.vfs.set(path, bytes);
+    return { location: path, uri: "", bytes: bytes.length, sha256: sha256Hex(bytes) };
   }
-  try {
-    await writeFile(dest, base64ToBytes(data));
-    await setSetting("last_backup_date", todayIso());
-    return { canceled: false, path: dest };
-  } finally {
-    if (tempPath) await remove(tempPath).catch(() => {});
-  }
+  return invoke<SaveReport>("save_backup_to_downloads", { content: text, fileName });
 }
 
 /**
- * Open the file picker and read + validate the selected backup file.
- * Returns null when the user cancels; throws when the file is not a
- * SQLite database.
+ * Export the database as a `.digal` backup.
+ *
+ * `kind: "before-restore"` writes the safety copy that a restore makes of the
+ * data it is about to replace; it deliberately does NOT update
+ * `last_backup_date` (that line means "when you last exported a backup").
+ */
+export async function exportBackup(kind: BackupKind = "backup"): Promise<BackupResult> {
+  const tables = await collectTables();
+  const houseName = await getSetting("house_name", "RentEase");
+  const text = serializeBackup(sealBackupEnvelope(buildBackupEnvelope(tables, { houseName })));
+  const fileName = formatBackupFileName(new Date(), kind);
+
+  let report: SaveReport;
+  try {
+    report = await saveBackupFile(text, fileName);
+  } catch (e) {
+    throw new Error(BACKUP_MESSAGES.exportFailed(String(e)));
+  }
+
+  // Verify what actually landed on the device — a truncated or empty file must
+  // never be reported as a successful backup (spec §4.1 step 5).
+  const expectedBytes = utf8Encode(text);
+  const intact =
+    report.bytes === expectedBytes.length &&
+    report.sha256.toLowerCase() === sha256Hex(expectedBytes) &&
+    parseBackupFile(text, fileName).ok;
+  if (!intact) {
+    throw new Error(BACKUP_MESSAGES.exportVerifyFailed);
+  }
+
+  if (kind === "backup") await setSetting("last_backup_date", todayIso());
+  return { fileName, location: report.location, uri: report.uri };
+}
+
+/** Post-export share sheet (Android only; a no-op elsewhere). */
+export async function shareBackup(fileName: string, uri: string): Promise<void> {
+  if (!isTauri() || !uri) return;
+  await invoke("share_backup_file", { uri, fileName });
+}
+
+// ---------------------------------------------------------------------------
+// import
+// ---------------------------------------------------------------------------
+
+/**
+ * Open the file picker and validate the chosen file.
+ *
+ * Returns null when the user cancels and throws with the locked message when
+ * the file is not a usable backup. The picker filters on `.digal` but accepts
+ * whatever the user picks: custom extensions map unreliably to Android MIME
+ * types, so the content is the real gate.
  */
 export async function chooseBackupFile(): Promise<ChosenBackup | null> {
   const src = await open({
     title: "Choose a backup file",
     multiple: false,
     directory: false,
-    filters: [{ name: "SQLite database", extensions: ["db", "sqlite"] }],
+    filters: [{ name: "BHMS backup", extensions: ["digal"] }],
   });
   if (!src || Array.isArray(src)) return null;
-  const data = bytesToBase64(await readFile(src));
-  if (!isSqliteFile(data)) {
-    throw new Error("That file is not a SQLite database backup.");
-  }
-  if (!isBoardingHouseDb(data)) {
-    throw new Error("That file is not a RentEase backup.");
-  }
-  return { filePath: src, dataBase64: data, fileName: displayName(src) };
+
+  const fileName = displayName(String(src));
+  const bytes = await readFile(src);
+  const result = parseBackupBytes(bytes, fileName);
+  if (!result.ok) throw new Error(result.message);
+  return { filePath: String(src), fileName, snapshot: result.snapshot };
 }
 
-async function removeQuiet(p: string): Promise<void> {
-  await remove(p).catch(() => {});
-}
-
-/** Roll the swap back: restore the pre-import `.bak` file and reopen. */
-async function restoreFromBackup(dbPath: string, bakPath: string): Promise<void> {
-  await closeDb();
-  await removeQuiet(dbPath);
-  await removeQuiet(dbPath + "-wal");
-  await removeQuiet(dbPath + "-shm");
-  await rename(bakPath, dbPath);
-  await getDb();
+/** Reopen the live database (used on every failure path so the app stays usable). */
+async function reopenQuiet(): Promise<void> {
+  try {
+    await getDb();
+  } catch {
+    // The caller already has the real error to report.
+  }
 }
 
 /**
- * Replace the live database with the chosen backup. Assumes the caller has
- * already shown the destructive-action confirmation.
- *
- * Throws on failure — the original database is restored in that case.
+ * Replace the live database with the chosen backup. Assumes the caller already
+ * showed the destructive-action confirmation. Throws with a specific reason on
+ * failure; the live data is only ever replaced after every check has passed.
  */
 export async function importBackup(chosen: ChosenBackup): Promise<void> {
-  const dbPath = await liveDbPath();
-  const bakPath = dbPath + ".bak";
+  // 1. Mandatory safety copy of the data we are about to replace (spec §4.3.5).
+  let safety: BackupResult;
+  try {
+    safety = await exportBackup("before-restore");
+  } catch {
+    throw new Error(BACKUP_MESSAGES.safetyCopyFailed);
+  }
 
-  // 1. Release the live connection so the file can be replaced.
+  // 2. Rust re-validates the exact file text, rebuilds a fresh database from the
+  //    migration chain, loads the rows, verifies integrity, then swaps the file
+  //    in. Nothing before that final swap touches the live database.
   await closeDb();
-
-  // 2. Move the current database aside as a rollback point.
-  await removeQuiet(bakPath);
-  await removeQuiet(dbPath + "-wal");
-  await removeQuiet(dbPath + "-shm");
   try {
-    await rename(dbPath, bakPath);
+    if (isTauri()) {
+      await invoke("install_backup_file", { payload: chosen.snapshot.text });
+    } else {
+      const install = previewShim()?.installBackup;
+      if (!install) throw new Error("Restoring is only available in the app.");
+      await install(chosen.snapshot.text);
+    }
   } catch (e) {
-    await getDb(); // reopen the untouched database
-    throw new Error(`Could not prepare the database for import: ${String(e)}`);
+    await reopenQuiet();
+    throw new Error(BACKUP_MESSAGES.restoreFailed(String(e)));
   }
 
-  // 3. Write the imported file in place.
-  try {
-    await writeFile(dbPath, base64ToBytes(chosen.dataBase64));
-  } catch (e) {
-    await restoreFromBackup(dbPath, bakPath);
-    throw new Error(`Could not write the backup file: ${String(e)}`);
-  }
-
-  // 4. Reopen and verify the imported database is healthy.
+  // 3. Reopen and confirm the restored database is healthy.
   try {
     const db = await getDb();
     const check = await db.select<{ integrity_check: string }[]>("PRAGMA integrity_check");
     if (check.length === 0 || check[0].integrity_check !== "ok") {
-      throw new Error("The imported file failed SQLite's integrity check.");
+      throw new Error("The restored database failed SQLite's integrity check.");
     }
   } catch (e) {
-    await restoreFromBackup(dbPath, bakPath);
-    throw new Error(`Import failed — previous data was restored. ${String(e)}`);
+    await reopenQuiet();
+    throw new Error(
+      BACKUP_MESSAGES.restoreFailed(
+        `${String(e)} Your previous data is still saved at ${safety.location}.`
+      )
+    );
   }
-
-  // 5. Success: drop the rollback file.
-  await removeQuiet(bakPath);
 }

@@ -1,7 +1,15 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { modalMaterial } from "$lib/motion";
-  import { exportBackup, chooseBackupFile, importBackup, type ChosenBackup } from "$lib/backup";
+  import {
+    chooseBackupFile,
+    exportBackup,
+    importBackup,
+    shareBackup,
+    type BackupResult,
+    type ChosenBackup,
+  } from "$lib/backup";
+  import { BACKUP_MESSAGES } from "$lib/backup-format";
   import { getSetting } from "$lib/settings";
   import { formatDate } from "$lib/format";
   import { pushToast } from "$lib/toast.svelte";
@@ -19,6 +27,8 @@
   let exporting = $state(false);
   let importing = $state(false);
   let lastBackupDate = $state("");
+  /** The most recent export, kept so the Share action can reuse its URI. */
+  let lastExport: BackupResult | null = $state(null);
 
   async function loadLastBackup() {
     lastBackupDate = await getSetting("last_backup_date", "");
@@ -32,13 +42,14 @@
     exporting = true;
     try {
       const result = await exportBackup();
-      if (!result.canceled) {
-        onNote("Backup exported ✓");
-        pushToast("Backup exported ✓", "success");
-        await loadLastBackup();
-      }
+      lastExport = result;
+      const msg = `Backup saved to ${result.location}`;
+      onNote(msg);
+      pushToast(msg, "success");
+      await loadLastBackup();
     } catch (e) {
-      const msg = `Failed to export backup: ${String(e)}`;
+      lastExport = null;
+      const msg = String(e instanceof Error ? e.message : e);
       onError(msg);
       pushToast(msg, "error");
     } finally {
@@ -46,17 +57,35 @@
     }
   }
 
-  // ----- import (pick → confirm modal → swap) -----
+  async function doShare() {
+    const target = lastExport;
+    if (!target) return;
+    try {
+      await shareBackup(target.fileName, target.uri);
+    } catch (e) {
+      const msg = `Could not share the backup: ${String(e)}`;
+      onError(msg);
+      pushToast(msg, "error");
+    }
+  }
+
+  // ----- import (pick → confirm modal → safety copy → rebuild + swap) -----
+  /** Two stages: the normal confirm, then a second one for an empty backup. */
+  type Stage = "confirm" | "empty";
   let pendingImport: ChosenBackup | null = $state(null);
+  let stage: Stage = $state("confirm");
 
   async function doPickImport() {
     onError(null);
     onNote(null);
     try {
       const chosen = await chooseBackupFile();
-      if (chosen) pendingImport = chosen;
+      if (chosen) {
+        pendingImport = chosen;
+        stage = "confirm";
+      }
     } catch (e) {
-      const msg = String(e);
+      const msg = String(e instanceof Error ? e.message : e);
       onError(msg);
       pushToast(msg, "error");
     }
@@ -65,16 +94,26 @@
   function closeImport() {
     if (importing) return;
     pendingImport = null;
+    stage = "confirm";
   }
 
-  // Android back button closes the restore-confirm dialog instead of
-  // navigating away. This section is always mounted, so register only while
-  // the (conditional) dialog is actually open.
+  /** Android back button closes the restore-confirm dialog instead of leaving. */
   $effect(() => {
     if (!pendingImport) return;
     const unregister = pushOverlay(closeImport);
     return () => unregister();
   });
+
+  /** Confirm button: an empty backup asks a second time before erasing anything. */
+  function advance() {
+    const chosen = pendingImport;
+    if (!chosen) return;
+    if (chosen.snapshot.summary.isEmpty && stage === "confirm") {
+      stage = "empty";
+      return;
+    }
+    confirmImport();
+  }
 
   async function confirmImport() {
     const chosen = pendingImport;
@@ -83,25 +122,45 @@
     onError(null);
     try {
       await importBackup(chosen);
+      const msg = BACKUP_MESSAGES.restored(chosen.fileName);
+      onNote(msg);
+      pushToast(msg, "success");
       pendingImport = null;
-      onNote("Backup restored ✓ All data was replaced.");
-      pushToast("Backup restored — all data replaced", "success");
+      stage = "confirm";
       await loadLastBackup();
+      // Every page still holds pre-restore data in memory — land on the
+      // dashboard after the message has been seen.
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 1500);
     } catch (e) {
-      const msg = String(e);
+      const msg = String(e instanceof Error ? e.message : e);
       onError(msg);
       pushToast(msg, "error");
     } finally {
       importing = false;
     }
   }
+
+  /** "12 rooms · 34 tenants · 210 payments" for the confirm dialog. */
+  function countSummary(counts: { label: string; count: number }[]): string {
+    return counts
+      .filter((c) => c.count > 0)
+      .map((c) => `${c.count} ${c.label}`)
+      .join(" · ");
+  }
+
+  function exportedDate(iso: string): string {
+    return iso ? formatDate(iso.slice(0, 10)) : "—";
+  }
 </script>
 
 <div class="card">
   <h2 class="section-title">Backup &amp; Restore</h2>
   <p class="muted">
-    Export shares a copy of your database so you can save it to Drive, email it, or move it
-    to another phone. Import replaces everything on this phone with a backup.
+    Export saves a readable <code>.digal</code> backup of your database into Downloads — keep it in
+    Drive, email it, or move it to another phone. Import replaces everything on this phone with a
+    backup.
   </p>
 
   <div class="settings-actions">
@@ -111,6 +170,9 @@
     <button class="btn" onclick={doPickImport} disabled={exporting || importing}>
       ⬇ Import backup
     </button>
+    {#if lastExport?.uri}
+      <button class="btn" onclick={doShare} disabled={exporting || importing}>↗ Share backup</button>
+    {/if}
   </div>
 
   <p class="last-backup">
@@ -123,20 +185,60 @@
 </div>
 
 {#if pendingImport}
+  {@const summary = pendingImport.snapshot.summary}
   <div class="modal" role="dialog" aria-label="Restore backup" transition:modalMaterial>
     <div class="confirm-panel">
-      <h2>Restore Backup</h2>
+      <h2>{stage === "empty" ? "Restore An Empty Backup" : "Restore Backup"}</h2>
       <p class="history-subtitle">{pendingImport.fileName}</p>
-      <p class="confirm-text">
-        Restore “{pendingImport.fileName}”? This replaces <strong>ALL current data</strong> on
-        this phone with the contents of the backup. This cannot be undone.
-      </p>
-      <div class="form-actions">
-        <button type="button" class="btn" onclick={closeImport} disabled={importing}>Cancel</button>
-        <button type="button" class="btn btn-primary" onclick={confirmImport} disabled={importing}>
-          {importing ? "Restoring…" : "Replace Data"}
-        </button>
-      </div>
+
+      <dl class="backup-manifest">
+        <div class="manifest-row">
+          <dt>Exported</dt>
+          <dd>{exportedDate(summary.exportedAt)}</dd>
+        </div>
+        {#if summary.houseName}
+          <div class="manifest-row">
+            <dt>House</dt>
+            <dd>{summary.houseName}</dd>
+          </div>
+        {/if}
+        <div class="manifest-row">
+          <dt>Contents</dt>
+          <dd>{summary.isEmpty ? "No tenants or rooms" : countSummary(summary.counts)}</dd>
+        </div>
+      </dl>
+
+      {#if stage === "confirm"}
+        <p class="confirm-text">
+          Restore “{pendingImport.fileName}”? This replaces <strong>ALL current data</strong> on this
+          phone with the contents of the backup. A copy of your current data is saved to Downloads
+          first. This cannot be undone.
+        </p>
+        <div class="form-actions">
+          <button type="button" class="btn" onclick={closeImport} disabled={importing}>Cancel</button>
+          <button type="button" class="btn btn-primary" onclick={advance} disabled={importing}>
+            {summary.isEmpty ? "Continue…" : importing ? "Restoring…" : "Replace Data"}
+          </button>
+        </div>
+      {:else}
+        <p class="confirm-text confirm-warn">
+          This backup contains no tenants or rooms. Restoring it will erase all data on this phone.
+          Continue?
+        </p>
+        <div class="form-actions">
+          <button
+            type="button"
+            class="btn"
+            onclick={() => (stage = "confirm")}
+            disabled={importing}
+          >
+            Cancel
+          </button>
+          <button type="button" class="btn btn-danger" onclick={confirmImport} disabled={importing}>
+            {importing ? "Restoring…" : "Erase & Restore"}
+          </button>
+        </div>
+      {/if}
     </div>
   </div>
 {/if}
@@ -158,5 +260,45 @@
   .card .muted {
     font-size: 0.88rem;
     line-height: 1.5;
+  }
+
+  .card code {
+    font-size: 0.85em;
+  }
+
+  /* ---- restore confirm dialog: what exactly is inside this file ---- */
+  .backup-manifest {
+    margin: 12px 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--fill);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .manifest-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 0.85rem;
+  }
+
+  .manifest-row dt {
+    color: var(--label-2);
+  }
+
+  .manifest-row dd {
+    margin: 0;
+    text-align: right;
+    font-weight: 600;
+    color: var(--label);
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .confirm-warn {
+    color: var(--red-deep);
+    font-weight: 600;
   }
 </style>
