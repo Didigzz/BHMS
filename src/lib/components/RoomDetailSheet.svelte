@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { getDb } from "$lib/db";
   import { badgeClass } from "$lib/room-status";
-  import { getPaymentStatus, paymentLabel, type PaymentStatus } from "$lib/payment-status";
+  import { getPaymentStatus, paymentLabel, dueDateRowLabel, type PaymentStatus } from "$lib/payment-status";
   import { formatDate, formatMonthRange, monthKeyOf, phpPeso, phpPesoPrecise, roomLabel } from "$lib/format";
   import {
     applyHeldBalance,
@@ -444,6 +444,12 @@
     return getPaymentStatus(b.due_date, new Date(), b.last_paid_date);
   }
 
+  /** Payment status for a bed-grid box's tenant (missing boarder → green). */
+  function statusOfBox(box: { tenantId: number }): PaymentStatus {
+    const b = boarders.find((x) => x.id === box.tenantId);
+    return b ? statusOf(b) : "green";
+  }
+
   /** Human label for the boarder's payment badge. */
   function statusLabel(b: Boarder): string {
     return paymentLabel(statusOf(b), b.due_date, new Date(), b.last_paid_date);
@@ -548,7 +554,9 @@
 </script>
 
 {#snippet boarderCard(b: Boarder)}
-  <article class="boarder-card">
+  <!-- Due/overdue tenants are flagged by tinting the whole card (level 2);
+       the name itself stays plain text — see room-modal-add-tenant-ui-spec.md. -->
+  <article class="boarder-card" class:overdue={statusOf(b) === "red"}>
     <div class="boarder-head">
       <h3>{b.name}</h3>
       <span class="pay-badge pay-{statusOf(b)}"><span class="pay-dot"></span>{statusLabel(b)}</span>
@@ -564,7 +572,7 @@
         <dd>{formatDate(b.move_in_date)}</dd>
       </div>
       <div>
-        <dt>Next due</dt>
+        <dt>{dueDateRowLabel(b.due_date, new Date(), b.last_paid_date)}</dt>
         <dd>{formatDate(b.due_date)}</dd>
       </div>
       <div>
@@ -765,7 +773,7 @@
           {#each buildBedBoxes(boarders, room.capacity, room.held_beds) as box (box.key)}
             {#if box.kind === "tenant"}
               <button type="button" class="bed-box" onclick={() => openTenant(box.tenantId)}>
-                <span class="bed-name">{box.name}</span>
+                <span class="bed-name status-pill status-{statusOfBox(box)}">{box.name}</span>
                 {#if box.tag}
                   <span class="bed-tag" class:bed-tag-whole={box.wholeRoom}>{box.tag}</span>
                 {/if}
@@ -1044,6 +1052,14 @@
   .boarder-card:last-child {
     margin-bottom: 0;
   }
+  /* Due/overdue accent — mirrors the reserved-card pattern (soft border +
+     tint) so only the outstanding tenants stand out. Paid and due-soon cards
+     stay neutral. */
+  .boarder-card.overdue {
+    border-color: rgba(255, 59, 48, 0.35);
+    background: var(--red-soft);
+    background: color-mix(in srgb, var(--red-soft) 25%, var(--fill));
+  }
   .boarder-head {
     display: flex;
     align-items: center;
@@ -1273,6 +1289,27 @@
     font-size: 0.95rem;
     line-height: 1.2;
     overflow-wrap: anywhere;
+  }
+
+  /* ---- status pill around a tenant name (matches the card chips; the bed
+     box itself stays neutral) ---- */
+  .status-pill {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-weight: 700;
+  }
+  .status-green {
+    background: var(--green-soft);
+    color: var(--green-deep);
+  }
+  .status-yellow {
+    background: var(--amber-soft);
+    color: var(--amber-deep);
+  }
+  .status-red {
+    background: var(--red-soft);
+    color: var(--red-deep);
   }
 
   /* tag on every box of a multi-bed tenant: "Occupies N beds" / "Whole Room" */

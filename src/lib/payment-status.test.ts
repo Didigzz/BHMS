@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getPaymentStatus, paymentLabel, daysUntilDue, addMonths, STATUS_CONFIG } from "./payment-status";
+import { getPaymentStatus, paymentLabel, dueDateRowLabel, daysUntilDue, addMonths, STATUS_CONFIG } from "./payment-status";
 
 // Local-time helper: noon on the given date, so `startOfDay` inside the module
 // truncates to local midnight regardless of the machine's timezone. A bare
@@ -10,15 +10,18 @@ function d(y: number, mo: number, day: number): Date {
 }
 
 describe("getPaymentStatus — legacy fallback (no recorded payment)", () => {
-  it("is green until the due date has passed, plus the 2-day grace", () => {
-    // A brand-new tenant (due = move-in day, first-payment-month-spec) is
-    // current the moment they're created — nothing is overdue yet.
-    expect(getPaymentStatus("2026-08-05", d(2026, 8, 5))).toBe("green"); // the due day
+  it("is green only while the due date is still ahead — strict from the due day itself", () => {
+    // Strict comparison (due-date-status-fix-spec.md §3.1): the due day and
+    // any day after it are red, with no grace window. A brand-new tenant
+    // (due = move-in day, first-payment-month-spec) is red "Due today" the
+    // moment they're created — accepted consequence.
     expect(getPaymentStatus("2026-08-05", d(2026, 8, 3))).toBe("green"); // before
-    expect(getPaymentStatus("2026-08-05", d(2026, 8, 7))).toBe("green"); // 2-day grace
+    expect(getPaymentStatus("2026-08-05", d(2026, 8, 5))).toBe("red"); // the due day
+    expect(getPaymentStatus("2026-08-05", d(2026, 8, 7))).toBe("red"); // 2 days past — was green under grace
   });
 
-  it("is red once the due date has passed beyond the grace window", () => {
+  it("is red once the due date has passed, with no grace window", () => {
+    expect(getPaymentStatus("2026-08-05", d(2026, 8, 6))).toBe("red");
     expect(getPaymentStatus("2026-08-05", d(2026, 8, 8))).toBe("red");
     expect(getPaymentStatus("2026-08-05", d(2026, 8, 20))).toBe("red");
     expect(getPaymentStatus("2026-08-05", d(2026, 8, 21))).toBe("red");
@@ -36,8 +39,8 @@ describe("getPaymentStatus — legacy fallback (no recorded payment)", () => {
 
   it("falls back to the legacy heuristic when lastPaidDate is set but unparseable", () => {
     // A non-empty garbage lastPaidDate must not break the status chain — it
-    // silently falls through to the due-date comparison.
-    expect(getPaymentStatus("2026-08-05", d(2026, 8, 5), "garbage")).toBe("green");
+    // silently falls through to the strict due-date comparison.
+    expect(getPaymentStatus("2026-08-05", d(2026, 8, 5), "garbage")).toBe("red");
     expect(getPaymentStatus("2026-08-05", d(2026, 8, 20), "garbage")).toBe("red");
   });
 });
@@ -155,11 +158,42 @@ describe("addMonths", () => {
   });
 });
 
+describe("dueDateRowLabel", () => {
+  it("labels red tenants Overdue (1+ days past) or Due today (the due day itself)", () => {
+    expect(dueDateRowLabel("2026-09-01", d(2026, 9, 10))).toBe("Overdue");
+    expect(dueDateRowLabel("2026-09-10", d(2026, 9, 10))).toBe("Due today");
+  });
+
+  it("labels green, paid, and future-due tenants plain Due — never 'Next due'", () => {
+    expect(dueDateRowLabel("2026-09-11", d(2026, 9, 10))).toBe("Due"); // future
+    expect(dueDateRowLabel("2026-08-05", d(2026, 8, 3))).toBe("Due"); // not yet due
+    // Paid tenant still green (recorded payment cycle): Due.
+    expect(dueDateRowLabel("2026-09-05", d(2026, 8, 21), "2026-08-05")).toBe("Due");
+  });
+
+  it("labels yellow (due-soon) tenants 'Due soon'", () => {
+    // Paid Aug 5 → due Sep 5: yellow from Aug 22 (past the halfway point).
+    expect(dueDateRowLabel("2026-09-05", d(2026, 8, 22), "2026-08-05")).toBe("Due soon");
+  });
+
+  it("labels paid tenants Overdue once the rolled-forward due date arrives", () => {
+    expect(dueDateRowLabel("2026-09-05", d(2026, 9, 10), "2026-08-05")).toBe("Overdue");
+  });
+
+  it("handles cross-month and cross-year due dates with exact-date comparison", () => {
+    expect(dueDateRowLabel("2026-08-05", d(2026, 9, 6))).toBe("Overdue"); // cross-month
+    expect(dueDateRowLabel("2026-12-31", d(2027, 1, 1))).toBe("Overdue"); // cross-year
+    expect(dueDateRowLabel("2027-01-05", d(2027, 1, 1))).toBe("Due"); // cross-year, not yet due
+  });
+});
+
 // Belt-and-braces: lock the tuning constants that the status rules above
 // depend on, so a future adjustment is an explicit, reviewed change.
 describe("status tuning constants", () => {
   it("match the documented thresholds", () => {
     expect(STATUS_CONFIG.RECENT_PAID_DAYS).toBe(15);
-    expect(STATUS_CONFIG.OVERDUE_GRACE_DAYS).toBe(2);
+    // The 2-day grace window was removed by due-date-status-fix (strict
+    // comparison) — its constant must not come back silently.
+    expect("OVERDUE_GRACE_DAYS" in STATUS_CONFIG).toBe(false);
   });
 });
