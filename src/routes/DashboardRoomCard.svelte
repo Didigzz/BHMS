@@ -4,6 +4,8 @@
   import { phpPeso } from "$lib/format";
   import { effectiveOccupancy, pct } from "$lib/rooms";
   import type { DashboardRoom } from "./types";
+  import Icon from "$lib/components/Icon.svelte";
+  import CalendarCheck from "@lucide/svelte/icons/calendar-check";
 
   let {
     room,
@@ -43,7 +45,7 @@
 
     {#if room.whole_hold_name}
       <p class="reserved-line">
-        📅 Reserved — <strong>{room.whole_hold_name}</strong>
+        <span class="reserved-icon"><Icon icon={CalendarCheck} size={16} /></span>Reserved — <strong>{room.whole_hold_name}</strong>
       </p>
     {/if}
 
@@ -238,6 +240,12 @@
   }
   .room-main:hover .view-hint {
     color: var(--accent);
+  }
+
+  .reserved-icon {
+    display: inline-flex;
+    margin-right: 6px;
+    vertical-align: -0.15em;
   }
 
   @media (prefers-reduced-motion: reduce) {

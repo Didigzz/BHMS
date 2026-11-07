@@ -1,7 +1,13 @@
 <script lang="ts">
   import { getPaymentStatus, paymentLabel } from "$lib/payment-status";
-  import { roomLabel } from "$lib/format";
+  import { roomLabel, phpPesoPrecise } from "$lib/format";
   import type { Tenant } from "./types";
+  import Icon from "$lib/components/Icon.svelte";
+  import History from "@lucide/svelte/icons/history";
+  import Pencil from "@lucide/svelte/icons/pencil";
+  import LogOut from "@lucide/svelte/icons/log-out";
+  import HandCoins from "@lucide/svelte/icons/hand-coins";
+  import Trash2 from "@lucide/svelte/icons/trash-2";
 
   let {
     tenant,
@@ -57,6 +63,9 @@
         {statusLabel}
       </span>
     {/if}
+    {#if (tenant.amenity_balance ?? 0) > 0}
+      <span class="pay-badge" style="background: var(--fill); color: var(--label-2);" title="Amenity Balance">Amenity {phpPesoPrecise(tenant.amenity_balance)}</span>
+    {/if}
   </button>
 
   <div class="tenant-band" class:expanded>
@@ -82,30 +91,30 @@
       <div class="more-inner">
         <div class="icon-grid">
           <button type="button" class="mini" onclick={() => onHistory(tenant)}>
-            <span class="mini-icon" aria-hidden="true">🕐</span>
+            <span class="mini-icon" aria-hidden="true"><Icon icon={History} size={20} /></span>
             <span class="mini-label">History</span>
           </button>
           {#if !archived && onEdit}
             <button type="button" class="mini" onclick={() => onEdit(tenant)}>
-              <span class="mini-icon" aria-hidden="true">✏️</span>
+              <span class="mini-icon" aria-hidden="true"><Icon icon={Pencil} size={20} /></span>
               <span class="mini-label">Edit</span>
             </button>
           {/if}
           {#if !archived && onMoveOut}
             <button type="button" class="mini danger" onclick={() => onMoveOut(tenant)}>
-              <span class="mini-icon" aria-hidden="true">🚪</span>
+              <span class="mini-icon" aria-hidden="true"><Icon icon={LogOut} size={20} /></span>
               <span class="mini-label">Move Out</span>
             </button>
           {/if}
           {#if archived && tenant.deposit_held > 0 && tenant.deposit_refunded === 0 && onDepositRefunded}
             <button type="button" class="mini refund" onclick={() => onDepositRefunded(tenant)}>
-              <span class="mini-icon" aria-hidden="true">💵</span>
+              <span class="mini-icon" aria-hidden="true"><Icon icon={HandCoins} size={20} /></span>
               <span class="mini-label">Deposit Refunded</span>
             </button>
           {/if}
           {#if archived && onDelete}
             <button type="button" class="mini danger" onclick={() => onDelete(tenant)}>
-              <span class="mini-icon" aria-hidden="true">🗑️</span>
+              <span class="mini-icon" aria-hidden="true"><Icon icon={Trash2} size={20} /></span>
               <span class="mini-label">Delete</span>
             </button>
           {/if}
@@ -307,8 +316,8 @@
   }
 
   .mini-icon {
-    font-size: 18px;
-    line-height: 1;
+    display: grid;
+    place-items: center;
   }
 
   .mini-label {

@@ -192,6 +192,45 @@ describe("computeSalesReport — move-ins / move-outs", () => {
     expect(rep.moveIns).toEqual([]);
     expect(rep.moveOuts).toEqual([]);
   });
+
+  it("skips junk-name tenants (numeric-only or blank) in both lists", () => {
+    const r = raw({
+      tenants: [
+        // The reported bug: name literally "1", moved in AND out in the period.
+        tenant({ id: 1, name: "1", move_in_date: "2026-08-04", moved_out_date: "2026-08-20", monthly_rate: 600 }),
+        tenant({ id: 2, name: "   ", move_in_date: "2026-08-05", moved_out_date: "2026-08-21", monthly_rate: 600 }),
+        tenant({ id: 3, name: "12345", move_in_date: "2026-08-06" }),
+        // Real names are untouched.
+        tenant({ id: 4, name: "Ana", move_in_date: "2026-08-07", moved_out_date: "2026-08-22", monthly_rate: 800 }),
+      ],
+    });
+    const rep = computeSalesReport(r, aug, "2026-09-04");
+    expect(rep.moveIns.map((e) => e.name)).toEqual(["Ana"]);
+    expect(rep.moveOuts.map((e) => e.name)).toEqual(["Ana"]);
+  });
+
+  it("keeps names that merely contain digits (rooms, mixed text)", () => {
+    const r = raw({
+      tenants: [tenant({ id: 1, name: "Room 101", move_in_date: "2026-08-04" })],
+    });
+    expect(computeSalesReport(r, aug, "2026-09-04").moveIns.map((e) => e.name)).toEqual(["Room 101"]);
+  });
+
+  it("does not let the junk-name filter touch occupancy or sales math", () => {
+    const r = raw({
+      totalCapacity: 2,
+      payments: [{ amount: 2500, paid_date: "2026-08-05" }],
+      tenants: [
+        // Occupies a bed and paid, but has a junk name.
+        tenant({ id: 1, name: "1", beds_occupied: 2, move_in_date: "2026-01-01", monthly_rate: 2500 }),
+      ],
+    });
+    const rep = computeSalesReport(r, aug, "2026-09-04");
+    expect(rep.total).toBe(2500);
+    expect(rep.occupancy).toEqual({ occupied: 2, total: 2, pct: 100 });
+    expect(rep.moveIns).toEqual([]);
+    expect(rep.moveOuts).toEqual([]);
+  });
 });
 
 describe("computeSalesReport — occupancy", () => {

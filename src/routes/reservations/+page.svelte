@@ -9,6 +9,8 @@
   import ConvertModal from "./ConvertModal.svelte";
   import ReservationCard from "./ReservationCard.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
+  import Icon from "$lib/components/Icon.svelte";
+  import HandCoins from "@lucide/svelte/icons/hand-coins";
   import type { ConvertPayload, Reservation, ReservationFormState, RoomOption } from "./types";
 
   let reservations: Reservation[] = $state([]);
@@ -200,11 +202,14 @@
 
   {#if pendingCancel}
     {@const target = pendingCancel}
+    {#snippet depositNote()}
+      <span class="note-icon"><Icon icon={HandCoins} size={16} /></span>Remember to return the {phpPesoPrecise(target.deposit ?? 0)} holding deposit.
+    {/snippet}
     <ConfirmModal
       title="Cancel Reservation"
       subtitle={`${target.name} · ${target.room_number}`}
       message={`Cancel the reservation for ${target.name} on ${target.room_number}?`}
-      note={target.deposit != null ? `💰 Remember to return the ${phpPesoPrecise(target.deposit)} holding deposit.` : undefined}
+      note={target.deposit != null ? depositNote : undefined}
       confirmLabel="Cancel Reservation"
       busyLabel="Cancelling…"
       onConfirm={() => doCancel(target)}
@@ -263,5 +268,11 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+  }
+
+  .note-icon {
+    display: inline-flex;
+    margin-right: 6px;
+    vertical-align: -0.15em;
   }
 </style>

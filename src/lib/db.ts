@@ -3,6 +3,22 @@ import { invoke } from "@tauri-apps/api/core";
 
 let dbPromise: Promise<Database> | null = null;
 
+/**
+ * Thrown instead of opening a database when this install has lost its own.
+ *
+ * The SQL plugin would otherwise create an empty database in its place, which is
+ * indistinguishable from real data loss: the app would open looking normal and
+ * empty. Throwing keeps that from ever happening silently.
+ */
+export class DatabaseMissingError extends Error {
+  constructor(readonly latestSafetyCopy: string | null) {
+    super(
+      "RentEase cannot find its data file, and has not created an empty one in its place."
+    );
+    this.name = "DatabaseMissingError";
+  }
+}
+
 /** True inside the Tauri WebView; false in the browser-preview shims. */
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -16,12 +32,24 @@ export function isTauri(): boolean {
 export function getDb(): Promise<Database> {
   if (!dbPromise) {
     dbPromise = (async () => {
-      // The sql plugin refuses to open a database when an applied migration no
-      // longer matches the SQL embedded in this build ("migration N was
-      // previously applied but has been modified"). The Rust side rewrites the
-      // recorded checksums to match before the plugin validates, so a database
-      // created by an older build keeps working instead of bricking every page.
       if (isTauri()) {
+        // A missing data file on an install that has already run means something
+        // went wrong. Refuse here, before the plugin can quietly create an empty
+        // database that would look like the landlord's data had vanished.
+        const state = await invoke<{
+          databasePresent: boolean;
+          hasRunBefore: boolean;
+          latestSafetyCopy: string | null;
+        }>("database_state");
+        if (state.hasRunBefore && !state.databasePresent) {
+          throw new DatabaseMissingError(state.latestSafetyCopy);
+        }
+
+        // The sql plugin refuses to open a database when an applied migration no
+        // longer matches the SQL embedded in this build ("migration N was
+        // previously applied but has been modified"). The Rust side rewrites the
+        // recorded checksums to match before the plugin validates, so a database
+        // created by an older build keeps working instead of bricking every page.
         try {
           await invoke("repair_migrations");
         } catch (err) {
@@ -30,7 +58,13 @@ export function getDb(): Promise<Database> {
           console.warn("repair_migrations failed:", err);
         }
       }
-      return Database.load("sqlite:boarding-house.db");
+      const database = await Database.load("sqlite:boarding-house.db");
+      if (isTauri()) {
+        // Record that this install has a working database, so a later missing
+        // file is recognised instead of looking like a first launch.
+        invoke("mark_database_initialised").catch(() => {});
+      }
+      return database;
     })();
   }
   return dbPromise;

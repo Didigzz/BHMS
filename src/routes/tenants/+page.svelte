@@ -13,6 +13,7 @@
     refundDeposit,
     type PaymentEditOptions,
   } from "$lib/tenant-actions";
+  import { BUCKETS, bucketOf, parseBucket, type TenantBucket } from "$lib/tenant-filter";
   import { getSetting } from "$lib/settings";
   import { pushToast } from "$lib/toast.svelte";
   import ApplyBalanceModal from "./ApplyBalanceModal.svelte";
@@ -24,6 +25,7 @@
   import PaymentHistoryModal from "./PaymentHistoryModal.svelte";
   import ReceiptModal from "./ReceiptModal.svelte";
   import TenantCard from "./TenantCard.svelte";
+  import { countAmenityBillsForTenant } from "$lib/amenity-actions";
   import TenantDetailModal from "./TenantDetailModal.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
   import type { PaymentRecord, Room, Tenant, TenantFormState } from "./types";
@@ -62,6 +64,59 @@
     );
   }
 
+  // ----- payment-status filter (?status= param — chips directly below the
+  // search box, tenant-payment-filter-spec.md). The URL is the single source of
+  // truth for the active chip; `frozenIds` is the snapshot of which tenants
+  // belonged to that bucket when it was picked — a list reload after recording
+  // a payment must NOT yank a card out of the set the landlord is working
+  // through. Search and the ?room= chip stay live. -----
+  const statusFilter = $derived(parseBucket(page.url.searchParams.get("status")));
+
+  /** Ids captured for the selected bucket; null = no bucket selected. */
+  let frozenIds: Set<number> | null = $state(null);
+  /** The ?status= value `frozenIds` was built for; "init" until the first sync. */
+  let syncedParam: TenantBucket | null | "init" = $state("init");
+
+  /** Freeze the bucket's membership from the (unsearched) active list. */
+  function freezeBucket(bucket: TenantBucket | null) {
+    syncedParam = bucket;
+    frozenIds =
+      bucket === null
+        ? null
+        : new Set(activeTenants.filter((t) => bucketOf(t) === bucket).map((t) => t.id));
+  }
+
+  /** Select, switch, or clear (re-tap) a bucket: freeze it, then push the URL. */
+  function selectBucket(bucket: TenantBucket | null) {
+    // Collapse any open More options panel, like a list reload does.
+    moreOptionsId = null;
+    freezeBucket(bucket);
+    const params = new URLSearchParams(page.url.searchParams);
+    if (bucket) params.set("status", bucket);
+    else params.delete("status");
+    const qs = params.toString();
+    // Default push: the browser Back button steps back through filter choices.
+    goto(qs ? `/tenants?${qs}` : "/tenants", { keepFocus: true, noScroll: true });
+  }
+
+  /** Drop only the ?room= chip, keeping any selected payment bucket. */
+  function clearRoomFilter() {
+    const params = new URLSearchParams(page.url.searchParams);
+    params.delete("room");
+    const qs = params.toString();
+    goto(qs ? `/tenants?${qs}` : "/tenants", { keepFocus: true, noScroll: true });
+  }
+
+  // Browser Back/Forward changes ?status= without a tap — re-freeze so the list
+  // always matches the chip. Keyed on the param (and the first data load) only:
+  // loadData() must not rebuild the snapshot.
+  $effect(() => {
+    const param = statusFilter;
+    if (loading) return;
+    if (param === syncedParam) return;
+    freezeBucket(param);
+  });
+
   // ----- room filter (?room= param — set by the rooms page's "Manage tenants"
   // menu item, deep-linkable). Applies to the Active list only. An unknown
   // room id degrades gracefully to no filter. -----
@@ -75,10 +130,27 @@
     })()
   );
 
+  // Order: frozen bucket membership → live search → live ?room= chip. The
+  // `frozenIds` null-fallback only runs before the first snapshot sync (a deep
+  // link straight to ?status=...), so the list is never briefly empty.
   const visibleActive = $derived(
-    activeTenants.filter(matchesSearch).filter((t) => !filterRoom || t.room_id === filterRoom.id)
+    activeTenants
+      .filter(
+        (t) =>
+          statusFilter === null ||
+          (frozenIds ? frozenIds.has(t.id) : bucketOf(t) === statusFilter)
+      )
+      .filter(matchesSearch)
+      .filter((t) => !filterRoom || t.room_id === filterRoom.id)
   );
   const visibleArchived = $derived(archivedTenants.filter(matchesSearch));
+
+  /** Empty-state copy for the Active list: bucket-specific, else the search template. */
+  const activeEmptyMessage = $derived.by(() => {
+    const q = searchQuery.trim();
+    if (q) return `No tenants match “${q}”.`;
+    return BUCKETS.find((b) => b.key === statusFilter)?.empty ?? `No tenants match “${q}”.`;
+  });
 
   // ----- modal targets -----
   let formOpen = $state(false);
@@ -162,9 +234,16 @@
         // recorded as a payment until the landlord manually applies the
         // balance. advance_held = the entered ₱ (no months × rate math);
         // advance_months stays 0 for new tenants (legacy column).
+        //
+        // "Already boarding?" backfill (already-boarding-spec.md §3.3): the
+        // toggle sets `beds_occupied` (multi-bed tenants entered correctly at
+        // creation) and the invisible `backfilled` flag (default 0), which is
+        // what lets the v067 trigger skip the room checks for these inserts.
+        const backfilled = form.boarding ? 1 : 0;
+        const beds = form.boarding ? Math.max(1, Math.trunc(Number(form.beds_occupied) || 1)) : 1;
         await db.execute(
-          "INSERT INTO tenants (name, contact, room_id, move_in_date, due_date, monthly_rate, deposit_amount, advance_months, advance_held, deposit_held, last_paid_date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
-          [form.name.trim(), form.contact.trim(), Number(form.room_id), form.move_in_date, form.due_date, monthlyRate, deposit, 0, advance, deposit ?? 0, null]
+          "INSERT INTO tenants (name, contact, room_id, move_in_date, due_date, monthly_rate, deposit_amount, advance_months, advance_held, deposit_held, last_paid_date, beds_occupied, backfilled) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+          [form.name.trim(), form.contact.trim(), Number(form.room_id), form.move_in_date, form.due_date, monthlyRate, deposit, 0, advance, deposit ?? 0, null, beds, backfilled]
         );
       } else {
         // Editing overwrites the REMAINING advance pot (the correction path
@@ -175,7 +254,10 @@
         );
       }
       await loadData();
-      pushToast(form.id === null ? `Tenant added — ${form.name.trim()}` : `Tenant updated — ${form.name.trim()}`, "success");
+      const addMessage = form.boarding
+        ? `Existing tenant added — ${form.name.trim()}`
+        : `Tenant added — ${form.name.trim()}`;
+      pushToast(form.id === null ? addMessage : `Tenant updated — ${form.name.trim()}`, "success");
       return null;
     } catch (e) {
       const msg = String(e);
@@ -305,8 +387,27 @@
     }
   }
 
-  /** Open the in-app confirm for permanent deletion. */
-  function permanentlyDelete(t: Tenant) {
+  /**
+   * Open the in-app confirm for permanent deletion. A tenant who appears on any
+   * amenity bill is blocked here with an explanation (amenity-billing-spec.md
+   * §9.4) — history keeps its subject, and the landlord is told why instead of
+   * meeting a raw foreign-key error.
+   */
+  async function permanentlyDelete(t: Tenant) {
+    try {
+      const db = await getDb();
+      const bills = await countAmenityBillsForTenant(db, t.id);
+      if (bills > 0) {
+        pushToast(
+          `${t.name} has ${bills} amenity bill${bills === 1 ? "" : "s"} — cancel them or keep the tenant.`,
+          "error",
+        );
+        return;
+      }
+    } catch (e) {
+      reportError(`Failed to check amenity bills: ${String(e)}`);
+      return;
+    }
     pendingDelete = t;
   }
 
@@ -360,7 +461,7 @@
       <div class="room-filter-row">
         <span class="room-filter-chip">
           Room {filterRoom.room_number}
-          <button type="button" class="room-filter-clear" aria-label="Clear room filter" onclick={() => goto("/tenants")}>
+          <button type="button" class="room-filter-clear" aria-label="Clear room filter" onclick={clearRoomFilter}>
             ✕
           </button>
         </span>
@@ -375,6 +476,22 @@
         bind:value={searchQuery}
       />
     </div>
+
+    {#if view === "active"}
+      <!-- Payment-status filter: tap a chip to narrow the Active list, tap the
+           active chip again to clear (no "All" chip). -->
+      <div class="chips chips-scroll" role="tablist" aria-label="Payment status filter">
+        {#each BUCKETS as bucket (bucket.key)}
+          <button
+            type="button"
+            class:active={statusFilter === bucket.key}
+            onclick={() => selectBucket(statusFilter === bucket.key ? null : bucket.key)}
+          >
+            {bucket.label}
+          </button>
+        {/each}
+      </div>
+    {/if}
   {/if}
 
   {#if formOpen}
@@ -487,7 +604,7 @@
       </div>
     {:else if visibleActive.length === 0}
       <div class="card empty">
-        <p class="muted">No tenants match “{searchQuery.trim()}”.</p>
+        <p class="muted">{activeEmptyMessage}</p>
       </div>
     {:else}
       <ul class="tenant-list">
@@ -592,6 +709,19 @@
     outline-offset: 2px;
   }
 
+  /* Touch: a 20px "x" inside the filter chip. The chip's own text is not
+     interactive, so the larger hit area steals nothing from it. */
+  @media (pointer: coarse) {
+    .room-filter-clear {
+      position: relative;
+    }
+    .room-filter-clear::before {
+      content: "";
+      position: absolute;
+      inset: -12px;
+    }
+  }
+
   /* ---- search ---- */
   .search-wrap {
     margin-bottom: 14px;
@@ -603,7 +733,8 @@
     border-radius: 10px;
     border: 1px solid var(--separator);
     padding: 10px 14px;
-    font-size: 0.95rem;
+    /* 1rem (16px) — anything smaller makes iOS zoom the page on focus. */
+    font-size: 1rem;
     font-family: inherit;
     color: var(--label);
     background: var(--card);
@@ -612,5 +743,23 @@
   .search-input:focus {
     outline: 2px solid var(--accent);
     border-color: transparent;
+  }
+
+  /* ---- payment-status filter chips ---- */
+  /* Overrides the global wrapping .chips row: one swipeable line on a phone. */
+  .chips-scroll {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .chips-scroll button {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .chips-scroll::-webkit-scrollbar {
+    display: none;
   }
 </style>

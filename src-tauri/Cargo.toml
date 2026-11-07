@@ -37,3 +37,11 @@ base64 = "0.22"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
 
+# Desktop only. A second launch must focus the running window instead of
+# starting another copy: two copies hold the same database open, and on Windows
+# that makes the file swap a restore needs fail with "Access is denied". The
+# plugin is desktop-only, so it is kept out of the mobile dependency graph
+# entirely.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+

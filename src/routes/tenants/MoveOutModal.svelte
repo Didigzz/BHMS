@@ -3,6 +3,8 @@
   import { phpPesoPrecise } from "$lib/format";
   import { modalMaterial } from "$lib/motion";
   import { pushOverlay } from "$lib/back-stack";
+  import Icon from "$lib/components/Icon.svelte";
+  import HandCoins from "@lucide/svelte/icons/hand-coins";
   import type { Tenant } from "./types";
 
   let {
@@ -47,9 +49,9 @@
       (including payment history) is kept in the Archived view.
     </p>
     {#if tenant.deposit_held > 0 && tenant.deposit_refunded === 0}
-      <p class="deposit-note">💰 Held deposit of {phpPesoPrecise(tenant.deposit_held)} is still unrefunded.</p>
+      <p class="deposit-note"><span class="lead-icon"><Icon icon={HandCoins} size={16} /></span>Held deposit of {phpPesoPrecise(tenant.deposit_held)} is still unrefunded.</p>
     {:else if tenant.advance_held > 0}
-      <p class="deposit-note">💰 {phpPesoPrecise(tenant.advance_held)} advance is still held — apply it to cover months if refunds aren't allowed.</p>
+      <p class="deposit-note"><span class="lead-icon"><Icon icon={HandCoins} size={16} /></span>{phpPesoPrecise(tenant.advance_held)} advance is still held — apply it to cover months if refunds aren't allowed.</p>
     {/if}
     <div class="form-actions">
       <button type="button" class="btn" onclick={close} disabled={saving}>Cancel</button>
@@ -59,4 +61,12 @@
     </div>
   </div>
 </div>
+
+<style>
+  .lead-icon {
+    display: inline-flex;
+    margin-right: 6px;
+    vertical-align: -0.15em;
+  }
+</style>
 

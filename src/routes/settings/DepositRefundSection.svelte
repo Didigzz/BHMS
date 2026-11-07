@@ -57,7 +57,7 @@
     </button>
   </div>
   {#if saved}
-    <p class="prefs-saved">Saved ✓</p>
+    <p class="prefs-saved">Saved</p>
   {/if}
 </div>
 
@@ -133,6 +133,14 @@
     .switch-row input,
     .switch-row input::after {
       transition: none;
+    }
+  }
+
+  /* Touch: the row is a <label> wrapping the switch, so a 44px row makes the
+     whole width tappable instead of just the 51x31 control. */
+  @media (pointer: coarse) {
+    .switch-row {
+      min-height: 44px;
     }
   }
 </style>

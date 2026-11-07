@@ -3,6 +3,9 @@
   import { modalMaterial } from "$lib/motion";
   import { phpPesoPrecise } from "$lib/format";
   import { pushOverlay } from "$lib/back-stack";
+  import Icon from "$lib/components/Icon.svelte";
+  import BedDouble from "@lucide/svelte/icons/bed-double";
+  import HandCoins from "@lucide/svelte/icons/hand-coins";
   import type { ConvertPayload, Reservation, RoomOption } from "./types";
 
   let {
@@ -146,7 +149,7 @@
       <input type="tel" bind:value={contact} />
     </label>
 
-    <p class="room-fixed">🛏️ Room: <strong>{reservation.room_number}</strong> · {holdLabel}</p>
+    <p class="room-fixed"><span class="lead-icon"><Icon icon={BedDouble} size={16} /></span>Room: <strong>{reservation.room_number}</strong> · {holdLabel}</p>
 
     <label>
       Move-in date
@@ -172,7 +175,7 @@
 
     {#if reservation.deposit != null}
       <p class="deposit-note">
-        💰 Holding deposit {phpPesoPrecise(reservation.deposit)} carries over to the tenant.
+        <span class="lead-icon"><Icon icon={HandCoins} size={16} /></span>Holding deposit {phpPesoPrecise(reservation.deposit)} carries over to the tenant.
       </p>
     {/if}
 
@@ -230,5 +233,11 @@
     margin: -4px 0 0;
     font-size: 0.8rem;
     color: var(--label-3);
+  }
+
+  .lead-icon {
+    display: inline-flex;
+    margin-right: 6px;
+    vertical-align: -0.15em;
   }
 </style>

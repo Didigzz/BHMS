@@ -4,9 +4,6 @@ export const STATUS_CONFIG = {
   // Days after the due date during which the tenant is still considered
   // "recently paid" (green) — assumes payment happens at the due date.
   RECENT_PAID_DAYS: 15,
-  // Days past the due date that an unpaid tenant stays green — a short grace
-  // window before the payment "has passed" and counts as overdue.
-  OVERDUE_GRACE_DAYS: 2,
 } as const;
 
 /**
@@ -24,8 +21,8 @@ export const STATUS_CONFIG = {
  *            forward several months, so the green window extends to the
  *            halfway point before that next due date.
  *            Falls back to a due-date comparison for tenants that have never
- *            had a payment recorded: green until the stored due date passes
- *            (plus the grace window), then red.
+ *            had a payment recorded: green until the stored due date arrives,
+ *            then red from the due day itself (strict — no grace window).
  * - RED    → the due date has passed without a recorded payment
  * - YELLOW → approaching the next due date (past the halfway point)
  *
@@ -66,16 +63,51 @@ export function getPaymentStatus(dueDate: string, today: Date = new Date(), last
     }
   }
 
-  // Legacy fallback: no recorded payment. A tenant is only overdue once their
-  // stored due date has passed (plus the grace window) — before that they're
-  // current. The old day-of-month anchor made every tenant "due" on that day
-  // each month, so a brand-new tenant (due = their move-in day, per
-  // first-payment-month-spec) showed red "Due today" the moment they were
-  // created. For these tenants the stored due date is a specific date, not a
-  // recurring day-of-month.
-  const daysSinceDue = Math.round((now.getTime() - due.getTime()) / 86_400_000);
-  if (daysSinceDue <= STATUS_CONFIG.OVERDUE_GRACE_DAYS) return "green";
+  // Legacy fallback: no recorded payment. A tenant is overdue the moment
+  // their stored due date arrives — strict exact-date comparison, so the due
+  // day itself counts as "Due today" and there is no grace window
+  // (due-date-status-fix-spec.md §3.1). The old day-of-month anchor made every
+  // tenant "due" on that day each month, so a brand-new tenant (due = their
+  // move-in day, per first-payment-month-spec) shows red "Due today" the
+  // moment they're created — accepted consequence (spec Round 1). For these
+  // tenants the stored due date is a specific date, not a recurring
+  // day-of-month.
+  if (daysSinceDue(dueDate, today) < 0) return "green";
   return "red";
+}
+
+/**
+ * Whole-day distance from `today` to the stored due date (signed; negative =
+ * the due date is still ahead). Exact-date comparison: the due day itself is
+ * 0. Callers guard against unparseable dates before using the result.
+ */
+function daysSinceDue(dueDate: string, today: Date): number {
+  const due = parseIsoDate(dueDate);
+  if (!due) return Number.NaN;
+  return Math.round((startOfDay(today).getTime() - startOfDay(due).getTime()) / 86_400_000);
+}
+
+/**
+ * Due-row label for a tenant's due date — the dynamic counterpart of the
+ * status badges (due-date-status-fix-spec.md §3.4). The word "Next due" never
+ * appears as a row label: yellow reads "Due soon", green/paid/future read
+ * "Due", red reads "Due today" on the due day itself and "Overdue" once past.
+ *
+ * @param dueDate ISO date string "YYYY-MM-DD" of the tenant's next due date
+ * @param today reference date (defaults to now)
+ * @param lastPaidDate ISO date string "YYYY-MM-DD" of the last recorded payment
+ * @returns "Due soon" (yellow), "Due" (green/paid/future), "Due today" (due
+ *   day, unpaid), or "Overdue" (due date passed unpaid)
+ */
+export function dueDateRowLabel(
+  dueDate: string,
+  today: Date = new Date(),
+  lastPaidDate?: string | null,
+): "Due soon" | "Due" | "Due today" | "Overdue" {
+  const status = getPaymentStatus(dueDate, today, lastPaidDate);
+  if (status === "yellow") return "Due soon";
+  if (status !== "red") return "Due";
+  return daysSinceDue(dueDate, today) === 0 ? "Due today" : "Overdue";
 }
 
 /** Human-readable label for a payment status given a due date. */
@@ -104,7 +136,7 @@ export function paymentLabel(
       }
       // Unpaid tenants: overdue counts from the stored due date (not the
       // recurring day-of-month), so it doesn't reset each month.
-      const overdueDays = Math.max(0, Math.round((now.getTime() - startOfDay(due).getTime()) / 86_400_000));
+      const overdueDays = Math.max(0, daysSinceDue(dueDate, today));
       return overdueDays === 0 ? "Due today" : `Overdue ${overdueDays}d`;
     case "yellow":
       if (lastPaidDate) return `Due in ${Math.max(actualDaysUntilDue, 0)}d`;

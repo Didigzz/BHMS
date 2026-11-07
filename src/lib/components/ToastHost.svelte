@@ -2,6 +2,10 @@
   import type { TransitionConfig } from "svelte/transition";
   // .svelte.ts modules are imported with the .svelte specifier (Svelte 5).
   import { dismissToast, toasts } from "$lib/toast.svelte";
+  import Icon from "$lib/components/Icon.svelte";
+  import CircleCheck from "@lucide/svelte/icons/circle-check";
+  import CircleX from "@lucide/svelte/icons/circle-x";
+  import Info from "@lucide/svelte/icons/info";
 
   /** Top-banner toast motion: settle down from above; opacity-only when the
    *  user prefers reduced motion (mirrors the modalMaterial approach). */
@@ -28,7 +32,10 @@
       onclick={() => dismissToast(toast.id)}
     >
       <span class="toast-icon" aria-hidden="true">
-        {toast.variant === "success" ? "✓" : toast.variant === "error" ? "✕" : "ℹ"}
+        <Icon
+          icon={toast.variant === "success" ? CircleCheck : toast.variant === "error" ? CircleX : Info}
+          size={16}
+        />
       </span>
       <span class="toast-message">{toast.message}</span>
     </button>
@@ -76,9 +83,7 @@
   }
 
   .toast-icon {
-    font-weight: 800;
-    font-size: 0.95rem;
-    line-height: 1;
+    display: inline-flex;
   }
 
   .toast-success {

@@ -287,6 +287,18 @@ function round2(n: number): number {
 
 const inRange = (date: string, start: string, end: string): boolean => date >= start && date <= end;
 
+/**
+ * True when a tenant name carries no real identity: blank/whitespace-only or
+ * numeric-only (e.g. a stray "1"). Junk-name rows are skipped in the
+ * move-ins/move-outs display lists so placeholder/test records don't show up
+ * in the report — see sales-report-name-1-spec.md §7.2. Never applied to the
+ * money math or occupancy (those don't read names; §3.4).
+ */
+function isJunkName(name: string): boolean {
+  const trimmed = name.trim();
+  return trimmed === "" || /^\d+$/.test(trimmed);
+}
+
 /** Net sales contributed by everything whose date lands in `[start, end]`. */
 function bucketAmount(raw: SalesReportRaw, start: string, end: string): number {
   let amount = 0;
@@ -319,12 +331,12 @@ export function computeSalesReport(raw: SalesReportRaw, period: SalesReportPerio
   const buckets: SalesBucketTotal[] = bucketDefs.map((b) => ({ ...b, amount: bucketAmount(raw, b.start, b.end) }));
 
   const moveIns = raw.tenants
-    .filter((t) => inRange(t.move_in_date, start, end))
+    .filter((t) => inRange(t.move_in_date, start, end) && !isJunkName(t.name))
     .map<SalesEvent>((t) => ({ name: t.name, date: t.move_in_date, room: t.room_number, rate: t.monthly_rate ?? 0 }))
     .sort(sortByDateThenName);
 
   const moveOuts = raw.tenants
-    .filter((t) => t.moved_out_date != null && inRange(t.moved_out_date, start, end))
+    .filter((t) => t.moved_out_date != null && inRange(t.moved_out_date, start, end) && !isJunkName(t.name))
     .map<SalesEvent>((t) => ({ name: t.name, date: t.moved_out_date as string, room: t.room_number, rate: t.monthly_rate ?? 0 }))
     .sort(sortByDateThenName);
 

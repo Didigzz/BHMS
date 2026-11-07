@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { getDb } from "$lib/db";
   import { badgeClass } from "$lib/room-status";
-  import { getPaymentStatus, paymentLabel, type PaymentStatus } from "$lib/payment-status";
+  import { getPaymentStatus, paymentLabel, dueDateRowLabel, type PaymentStatus } from "$lib/payment-status";
   import { formatDate, formatMonthRange, monthKeyOf, phpPeso, phpPesoPrecise, roomLabel } from "$lib/format";
   import {
     applyHeldBalance,
@@ -17,6 +17,9 @@
   import { pushToast } from "$lib/toast.svelte";
   import { pushOverlay } from "$lib/back-stack";
   import { buildBedBoxes } from "$lib/bed-boxes";
+  import Icon from "$lib/components/Icon.svelte";
+  import Phone from "@lucide/svelte/icons/phone";
+  import BedDouble from "@lucide/svelte/icons/bed-double";
   import type { BoarderSheetRoom } from "$lib/rooms";
   import PayModal from "../../routes/tenants/PayModal.svelte";
   import ApplyBalanceModal from "../../routes/tenants/ApplyBalanceModal.svelte";
@@ -42,6 +45,8 @@
     advance_months: number;
     advance_held: number;
     deposit_held: number;
+    /** Amenity Balance — sum of this tenant's active (non-cancelled) amenity shares. */
+    amenity_balance: number;
   }
 
   /** One receipt transaction, grouped like the Payment History modal. */
@@ -76,7 +81,11 @@
   }: {
     room: BoarderSheetRoom;
     onClose: () => void;
-    /** Called after any successful payment mutation so the dashboard can refresh earnings. */
+    /**
+     * Called after any successful mutation (payment, edit, apply, bed count,
+     * move-out, deposit refund) so the page can refresh in place without a tab
+     * switch (dashboard-mobile-polish-spec §3).
+     */
     onDataChanged?: () => void;
   } = $props();
 
@@ -174,7 +183,7 @@
       [boarders, reservations] = await Promise.all([
         db.select<Boarder[]>(
           `SELECT id, name, contact, beds_occupied, monthly_rate, move_in_date, due_date, last_paid_date,
-                  deposit_amount, deposit_refunded, advance_months, advance_held, deposit_held
+                  deposit_amount, deposit_refunded, advance_months, advance_held, deposit_held, amenity_balance
            FROM tenants WHERE room_id=$1 AND moved_out_date IS NULL ORDER BY id`,
           [room.id]
         ),
@@ -235,6 +244,7 @@
       pushToast(`${b.name} now occupies ${bedsDraft} bed${bedsDraft === 1 ? "" : "s"}`, "success");
       await loadBoarders();
       refreshSelected();
+      onDataChanged?.();
     } catch (e) {
       const msg = String(e);
       pushToast(
@@ -290,6 +300,7 @@
       advance_held: b.advance_held,
       deposit_held: b.deposit_held,
       moved_out_date: null,
+      amenity_balance: b.amenity_balance,
     };
   }
 
@@ -399,6 +410,7 @@
       }
       await loadBoarders();
       refreshSelected();
+      onDataChanged?.();
     } catch (e) {
       pushToast(`Failed to mark as moved out: ${String(e)}`, "error");
     }
@@ -434,6 +446,7 @@
       pushToast(`Deposit refunded — ${t.name}`, "success");
       await loadBoarders();
       refreshSelected();
+      onDataChanged?.();
     } catch (e) {
       pushToast(`Failed to update deposit: ${String(e)}`, "error");
     }
@@ -444,9 +457,25 @@
     return getPaymentStatus(b.due_date, new Date(), b.last_paid_date);
   }
 
+  /** Payment status for a bed-grid box's tenant (missing boarder → green). */
+  function statusOfBox(box: { tenantId: number }): PaymentStatus {
+    const b = boarders.find((x) => x.id === box.tenantId);
+    return b ? statusOf(b) : "green";
+  }
+
   /** Human label for the boarder's payment badge. */
   function statusLabel(b: Boarder): string {
     return paymentLabel(statusOf(b), b.due_date, new Date(), b.last_paid_date);
+  }
+
+  /**
+   * Payment label for a bed-grid box. The box is colored by status, so the same
+   * words go on its aria-label — color alone must never be the only cue
+   * (dashboard-mobile-polish-spec §6.4).
+   */
+  function statusLabelOfBox(box: { tenantId: number }): string {
+    const b = boarders.find((x) => x.id === box.tenantId);
+    return b ? statusLabel(b) : "Current";
   }
 
   /** Load (and cache) one boarder's payment-history groups. */
@@ -548,14 +577,16 @@
 </script>
 
 {#snippet boarderCard(b: Boarder)}
-  <article class="boarder-card">
+  <!-- Due/overdue tenants are flagged by tinting the whole card (level 2);
+       the name itself stays plain text — see room-modal-add-tenant-ui-spec.md. -->
+  <article class="boarder-card" class:overdue={statusOf(b) === "red"}>
     <div class="boarder-head">
       <h3>{b.name}</h3>
       <span class="pay-badge pay-{statusOf(b)}"><span class="pay-dot"></span>{statusLabel(b)}</span>
     </div>
 
     {#if b.contact}
-      <p class="boarder-contact">📞 {b.contact}</p>
+      <p class="boarder-contact"><Icon icon={Phone} size={16} /><span>{b.contact}</span></p>
     {/if}
 
     <dl class="boarder-facts">
@@ -564,7 +595,7 @@
         <dd>{formatDate(b.move_in_date)}</dd>
       </div>
       <div>
-        <dt>Next due</dt>
+        <dt>{dueDateRowLabel(b.due_date, new Date(), b.last_paid_date)}</dt>
         <dd>{formatDate(b.due_date)}</dd>
       </div>
       <div>
@@ -756,7 +787,7 @@
         </div>
       {:else if boarders.length === 0 && reservations.length === 0}
         <div class="sheet-empty">
-          <p class="empty-emoji">🛏️</p>
+          <p class="empty-icon"><Icon icon={BedDouble} size={24} /></p>
           <p class="empty-title">No boarders yet</p>
           <p class="empty-sub">This room has no tenants assigned. Add a tenant from the Tenants tab and their details will show up here.</p>
         </div>
@@ -764,10 +795,16 @@
         <div class="bed-grid" aria-label="Beds">
           {#each buildBedBoxes(boarders, room.capacity, room.held_beds) as box (box.key)}
             {#if box.kind === "tenant"}
-              <button type="button" class="bed-box" onclick={() => openTenant(box.tenantId)}>
+              {@const status = statusOfBox(box)}
+              <button
+                type="button"
+                class="bed-box box-{status}"
+                aria-label={`${box.name} — ${statusLabelOfBox(box)}`}
+                onclick={() => openTenant(box.tenantId)}
+              >
                 <span class="bed-name">{box.name}</span>
                 {#if box.tag}
-                  <span class="bed-tag" class:bed-tag-whole={box.wholeRoom}>{box.tag}</span>
+                  <span class="bed-tag">{box.tag}</span>
                 {/if}
               </button>
             {:else if box.kind === "held"}
@@ -788,7 +825,7 @@
               </div>
 
               {#if r.contact}
-                <p class="boarder-contact">📞 {r.contact}</p>
+                <p class="boarder-contact"><Icon icon={Phone} size={16} /><span>{r.contact}</span></p>
               {/if}
 
               <dl class="boarder-facts">
@@ -880,7 +917,11 @@
     display: flex;
     align-items: flex-end;
     justify-content: center;
-    padding: 14px;
+    /* The sheet is bottom-anchored, so the bottom padding is what keeps it out
+       of the gesture bar / home indicator — at a flat 14px the sheet's last
+       rows sat inside it. The top inset keeps the sheet's rounded top below the
+       status bar. `max()` preserves the designed 14px where there is no inset. */
+    padding: max(14px, env(safe-area-inset-top, 0px)) 14px max(14px, env(safe-area-inset-bottom, 0px));
     background: rgba(0, 0, 0, 0.35);
     transition: background-color 0.25s ease;
   }
@@ -913,7 +954,11 @@
   .sheet {
     width: 100%;
     max-width: 760px;
-    height: calc(100vh - 28px);
+    /* Fills the backdrop's content box instead of subtracting a fixed 28px from
+       the viewport, so the sheet shrinks by exactly what the system bars take
+       rather than overflowing under them. Identical to the old
+       calc(100vh - 28px) when the device reports no insets. */
+    height: 100%;
     max-height: 900px;
     background: var(--card);
     border-radius: 22px;
@@ -993,9 +1038,11 @@
     text-align: center;
     padding: 56px 16px;
   }
-  .empty-emoji {
+  .empty-icon {
+    display: flex;
+    justify-content: center;
     margin: 0 0 10px;
-    font-size: 2.4rem;
+    color: var(--label-3);
   }
   .empty-title {
     margin: 0;
@@ -1044,6 +1091,14 @@
   .boarder-card:last-child {
     margin-bottom: 0;
   }
+  /* Due/overdue accent — mirrors the reserved-card pattern (soft border +
+     tint) so only the outstanding tenants stand out. Paid and due-soon cards
+     stay neutral. */
+  .boarder-card.overdue {
+    border-color: rgba(255, 59, 48, 0.35);
+    background: var(--red-soft);
+    background: color-mix(in srgb, var(--red-soft) 25%, var(--fill));
+  }
   .boarder-head {
     display: flex;
     align-items: center;
@@ -1057,6 +1112,9 @@
     overflow-wrap: anywhere;
   }
   .boarder-contact {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     margin: 6px 0 0;
     color: var(--label-2);
     font-size: 0.9rem;
@@ -1161,6 +1219,13 @@
   .history-toggle:hover {
     color: var(--accent);
   }
+
+  /* Touch: full-width but only ~24px tall — pad it out to a real row. */
+  @media (pointer: coarse) {
+    .history-toggle {
+      min-height: 44px;
+    }
+  }
   .history-chevron {
     font-size: 0.7rem;
   }
@@ -1257,8 +1322,35 @@
     transition: border-color 0.15s ease, transform 0.15s ease, background-color 0.15s ease;
     -webkit-tap-highlight-color: transparent;
   }
-  .bed-box:hover:not(.bed-vacant):not(.bed-held) {
-    border-color: var(--accent);
+  /* ---- whole-box payment status (dashboard-mobile-polish-spec §6) ----
+     The box itself carries the tint and the name is plain text on it. Custom
+     properties keep one rule per concern instead of one per status. */
+  .bed-box.box-green {
+    --status: var(--green);
+    --status-soft: var(--green-soft);
+    --status-deep: var(--green-deep);
+  }
+  .bed-box.box-yellow {
+    --status: var(--amber);
+    --status-soft: var(--amber-soft);
+    --status-deep: var(--amber-deep);
+  }
+  .bed-box.box-red {
+    --status: var(--red);
+    --status-soft: var(--red-soft);
+    --status-deep: var(--red-deep);
+  }
+  .bed-box.box-green,
+  .bed-box.box-yellow,
+  .bed-box.box-red {
+    background: var(--status-soft);
+    border-color: color-mix(in srgb, var(--status) 35%, transparent);
+    color: var(--status-deep);
+  }
+  .bed-box.box-green:hover,
+  .bed-box.box-yellow:hover,
+  .bed-box.box-red:hover {
+    border-color: color-mix(in srgb, var(--status) 65%, transparent);
   }
   .bed-box:active {
     transform: scale(0.98);
@@ -1268,26 +1360,26 @@
     outline-offset: 2px;
   }
 
+  /* Plain name on the tinted box — no inner pill (see the status rules above). */
   .bed-name {
+    color: inherit;
     font-weight: 700;
     font-size: 0.95rem;
     line-height: 1.2;
     overflow-wrap: anywhere;
   }
 
-  /* tag on every box of a multi-bed tenant: "Occupies N beds" / "Whole Room" */
+  /* Tag on every box of a multi-bed tenant: "Occupies N beds" / "Whole Room".
+     Neutral translucent so it reads as secondary on any status tint. */
   .bed-tag {
-    background: var(--accent-soft);
-    color: var(--accent-deep);
+    background: color-mix(in srgb, var(--card) 70%, transparent);
+    border: 1px solid color-mix(in srgb, var(--separator) 55%, transparent);
+    color: var(--label-2);
     border-radius: 999px;
     padding: 2px 9px;
     font-size: 0.7rem;
     font-weight: 700;
     white-space: nowrap;
-  }
-  .bed-tag-whole {
-    background: var(--amber-soft);
-    color: var(--amber-deep);
   }
 
   /* inert dashed boxes for held / free slots */
@@ -1371,6 +1463,15 @@
   }
   .step-btn:hover:not(:disabled) {
     background: var(--fill);
+  }
+
+  /* Touch: the ± steppers set a tenant's bed count — too consequential, and
+     too tightly paired, for a 38px target. */
+  @media (pointer: coarse) {
+    .step-btn {
+      width: 44px;
+      height: 44px;
+    }
   }
   .step-btn:disabled {
     opacity: 0.35;

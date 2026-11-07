@@ -16,8 +16,10 @@
 // Usage:
 //   node scripts/repair-migrations.mjs [path-to-db]
 //
-// Defaults to the live installed app database at
-// %APPDATA%\com.rentease.app\boarding-house.db
+// Defaults to the live installed app database. The identifier is the folder
+// name, so a renamed app keeps its data in a new folder — both the current
+// (%APPDATA%\com.digal.rentease) and pre-rename (%APPDATA%\com.rentease.app)
+// locations are checked, newest name first.
 
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
@@ -29,9 +31,12 @@ import { homedir } from "node:os";
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const MIGRATIONS_DIR = join(ROOT, "src-tauri", "migrations");
 
-const dbPath =
-  process.argv[2] ??
-  join(homedir(), "AppData", "Roaming", "com.rentease.app", "boarding-house.db");
+const roaming = join(homedir(), "AppData", "Roaming");
+const candidates = [
+  join(roaming, "com.digal.rentease", "boarding-house.db"),
+  join(roaming, "com.rentease.app", "boarding-house.db"),
+];
+const dbPath = process.argv[2] ?? candidates.find(existsSync) ?? candidates[0];
 
 if (!existsSync(dbPath)) {
   console.log(`No database at ${dbPath} — nothing to repair.`);

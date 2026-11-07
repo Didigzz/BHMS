@@ -17,15 +17,36 @@ export type ThemePreference = "light" | "dark" | "system";
 
 const THEME_KEY = "theme";
 
-/** Load the persisted preference (defaults to "system" — follow the device). */
+/**
+ * Load the persisted preference. A fresh install has no saved row and starts in
+ * Light (dashboard-mobile-polish-spec §5); a stored "system" row from an older
+ * build still follows the device.
+ */
 export async function getThemePreference(): Promise<ThemePreference> {
-  const value = await getSetting(THEME_KEY, "system");
-  return value === "light" || value === "dark" || value === "system" ? value : "system";
+  const value = await getSetting(THEME_KEY, "light");
+  return value === "light" || value === "dark" || value === "system" ? value : "light";
+}
+
+/**
+ * Mirror the choice into localStorage under the same "theme" key the inline
+ * script in src/app.html reads before first paint. Without it, a saved Dark
+ * install would flash light (the new markup default) until the database read
+ * completes. "system" is removed rather than cached so it keeps falling
+ * through to prefers-color-scheme.
+ */
+function cacheThemeHint(pref: ThemePreference): void {
+  try {
+    if (pref === "system") localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, pref);
+  } catch {
+    // Storage unavailable — the pre-paint hint is optional.
+  }
 }
 
 /** Apply a preference to the DOM and the native window (never throws). */
 export function applyTheme(pref: ThemePreference): void {
   document.documentElement.dataset.theme = pref;
+  cacheThemeHint(pref);
   if (isTauri()) {
     try {
       // null = follow the OS. Browser-preview mode never reaches this call
@@ -38,9 +59,9 @@ export function applyTheme(pref: ThemePreference): void {
 }
 
 /**
- * Apply the persisted preference once at startup. Runs after first paint, so a
- * brief flash of the device theme is expected while the setting loads from the
- * database (per light-mode-spec.md §4.5).
+ * Apply the persisted preference once at startup. The inline script in
+ * src/app.html has already applied the cached choice, so this only reconciles
+ * the DOM with the database (the source of truth) — no flash either way.
  */
 export async function initTheme(): Promise<void> {
   try {

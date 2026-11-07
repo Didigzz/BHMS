@@ -1,9 +1,30 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="utf-8" />
+    <script>
+      // Pre-paint theme hint (dashboard-mobile-polish-spec §5): the saved
+      // preference normally loads from the database after mount, which would
+      // paint the wrong theme first. `theme.ts` mirrors it here; a fresh
+      // install has no entry and keeps the markup default (light). "system"
+      // is never cached, so it still falls through to prefers-color-scheme.
+      try {
+        var savedTheme = localStorage.getItem("theme");
+        if (savedTheme === "light" || savedTheme === "dark") {
+          document.documentElement.dataset.theme = savedTheme;
+        }
+      } catch (e) {
+        // Storage unavailable — the light markup default stands.
+      }
+    </script>
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- Zoom is locked: this is a phone app, not a web page. `user-scalable=no`
+         / `maximum-scale` cover most Android WebViews; src/app.css adds
+         `touch-action` for the engines that ignore them. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
     <title>Tauri + SvelteKit + Typescript App</title>
     %sveltekit.head%
   </head>

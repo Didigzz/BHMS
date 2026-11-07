@@ -13,7 +13,9 @@ import { formatDate, phpPeso } from "./format";
  * tenant is never pinged twice for the same due date:
  *
  *   - `reminder`    → fires when 0 < days-until-due <= reminder_days (default 3)
- *   - `overdue`     → fires when the stored due date has passed unpaid
+ *   - `overdue`     → fires when the stored due date has passed unpaid (from
+ *                     the day after the due date; the due day shows red in-app
+ *                     but does not ping — due-date-status-fix-spec.md §3.7)
  *   - `overdue-7`   → fires instead of `overdue` once a tenant is 7+ days past
  *                     due (missed pings catch up to the most severe level, so
  *                     reopening the app late sends one ping, not three)
@@ -101,6 +103,8 @@ async function checkTenant(t: DueTenant, reminderDays: number, today: Date): Pro
 
   // Overdue — the stored due date passed unpaid (the status gate keeps legacy
   // tenants honest: they only go red after their monthly anchor passes).
+  // The UI turns red on the due day itself, but the OS ping waits until the
+  // day after (due-date-status-fix-spec.md §3.7) — no same-day "overdue".
   if (status === "red") {
     const overdueDays = -rawDaysUntil(t.due_date, today);
     if (overdueDays >= OVERDUE_FOLLOWUP_DAYS) {
@@ -110,7 +114,7 @@ async function checkTenant(t: DueTenant, reminderDays: number, today: Date): Pro
           `${t.name} — ${phpPeso(t.monthly_rate)} was due ${formatDate(t.due_date)}.`
         );
       }
-    } else if (overdueDays >= 0) {
+    } else if (overdueDays >= 1) {
       if (await claimPing(t.id, "overdue", t.due_date)) {
         await send(
           "Rent overdue",
