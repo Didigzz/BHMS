@@ -10,10 +10,15 @@
     type ChosenBackup,
   } from "$lib/backup";
   import { BACKUP_MESSAGES } from "$lib/backup-format";
+  import { getPlatformCapabilities, type PlatformCapabilities } from "$lib/platform";
   import { getSetting } from "$lib/settings";
   import { formatDate } from "$lib/format";
   import { pushToast } from "$lib/toast.svelte";
   import { pushOverlay } from "$lib/back-stack";
+  import Icon from "$lib/components/Icon.svelte";
+  import Upload from "@lucide/svelte/icons/upload";
+  import Download from "@lucide/svelte/icons/download";
+  import Share2 from "@lucide/svelte/icons/share-2";
 
   let {
     onError,
@@ -29,6 +34,15 @@
   let lastBackupDate = $state("");
   /** The most recent export, kept so the Share action can reuse its URI. */
   let lastExport: BackupResult | null = $state(null);
+
+  /**
+   * Export needs somewhere to put the file; **import does not** — picking a file
+   * and rebuilding the database both work wherever the app runs, so a platform
+   * with no file writer can still restore a backup. Only export is gated.
+   */
+  let caps = $state<PlatformCapabilities | null>(null);
+  getPlatformCapabilities().then((c) => (caps = c));
+  const canSave = $derived(caps === null || caps.saveToDevice);
 
   async function loadLastBackup() {
     lastBackupDate = await getSetting("last_backup_date", "");
@@ -164,16 +178,24 @@
   </p>
 
   <div class="settings-actions">
-    <button class="btn btn-primary" onclick={doExport} disabled={exporting || importing}>
-      {exporting ? "Exporting…" : "⬆ Export backup"}
+    <button
+      class="btn btn-primary"
+      onclick={doExport}
+      disabled={exporting || importing || !canSave}
+    >
+      <span class="btn-icon"><Icon icon={Upload} size={16} /></span>{exporting ? "Exporting…" : "Export backup"}
     </button>
     <button class="btn" onclick={doPickImport} disabled={exporting || importing}>
-      ⬇ Import backup
+      <span class="btn-icon"><Icon icon={Download} size={16} /></span>Import backup
     </button>
-    {#if lastExport?.uri}
-      <button class="btn" onclick={doShare} disabled={exporting || importing}>↗ Share backup</button>
+    {#if lastExport?.uri && caps?.shareSheet}
+      <button class="btn" onclick={doShare} disabled={exporting || importing}><span class="btn-icon"><Icon icon={Share2} size={16} /></span>Share backup</button>
     {/if}
   </div>
+
+  {#if caps && !caps.saveToDevice && caps.unavailableReason}
+    <p class="muted">{caps.unavailableReason}</p>
+  {/if}
 
   <p class="last-backup">
     {#if lastBackupDate}
@@ -209,6 +231,24 @@
       </dl>
 
       {#if stage === "confirm"}
+        {#if pendingImport.comparison.isSmaller}
+          <!-- Replacing is the point of an import, so the one case worth a
+               warning is a file that carries LESS than this device already has. -->
+          <p class="confirm-text confirm-warn">
+            {BACKUP_MESSAGES.smallerBackup(
+              pendingImport.comparison.backupTotal,
+              pendingImport.comparison.liveTotal
+            )}
+          </p>
+          <ul class="reduction-list">
+            {#each pendingImport.comparison.reductions as reduction}
+              <li>
+                <span>{reduction.label}</span>
+                <span>{reduction.backup} in the file · {reduction.live} on this device</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
         <p class="confirm-text">
           Restore “{pendingImport.fileName}”? This replaces <strong>ALL current data</strong> on this
           phone with the contents of the backup. A copy of your current data is saved to Downloads
@@ -300,5 +340,34 @@
   .confirm-warn {
     color: var(--red-deep);
     font-weight: 600;
+  }
+
+  /* Every table where the file carries less than the device does. */
+  .reduction-list {
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: var(--fill);
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.82rem;
+  }
+
+  .reduction-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .reduction-list li span:first-child {
+    color: var(--label-2);
+  }
+
+  .btn-icon {
+    display: inline-flex;
+    margin-right: 6px;
+    vertical-align: -0.15em;
   }
 </style>

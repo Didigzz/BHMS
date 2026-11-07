@@ -5,10 +5,11 @@
 // (Uses Node's built-in `node:sqlite`; Node >= 23.4 / 24.)
 //
 // The migration SQL lives in src-tauri/migrations/*.sql — the single source of
-// truth, embedded into the Rust app via include_str! in src-tauri/src/lib.rs.
+// truth, embedded into the Rust app via include_str! in
+// src-tauri/src/migrations.rs.
 // This script reads the same directory (no hand-duplicated SQL strings) and
-// DRIFT-CHECKS it against lib.rs: every file on disk must be referenced by an
-// include_str!, and every include_str! must point at a real file. Adding
+// DRIFT-CHECKS it against that ledger: every file on disk must be referenced by
+// an include_str!, and every include_str! must point at a real file. Adding
 // migration 28 means creating one .sql file and one include_str! line — the
 // smoke test then picks both up automatically.
 //
@@ -29,7 +30,7 @@ import { ROOM_STATUS_SQL } from "../src/lib/room-status.ts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const MIGRATIONS_DIR = join(ROOT, "src-tauri", "migrations");
-const LIB_RS = join(ROOT, "src-tauri", "src", "lib.rs");
+const MIGRATIONS_RS = join(ROOT, "src-tauri", "src", "migrations.rs");
 
 let failures = 0;
 function assert(cond, label) {
@@ -43,7 +44,7 @@ function assert(cond, label) {
 
 /**
  * Drift check between the two consumers of the schema:
- * the migration files on disk vs. the include_str! references in lib.rs.
+ * the migration files on disk vs. the include_str! references in migrations.rs.
  * Fails (via assert) if either side has a file the other doesn't.
  * Returns the sorted list of migration filenames to apply.
  */
@@ -51,9 +52,9 @@ function loadMigrations() {
   const onDisk = readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith(".sql"))
     .sort();
-  const libRs = readFileSync(LIB_RS, "utf8");
+  const ledgerRs = readFileSync(MIGRATIONS_RS, "utf8");
   const referenced = [
-    ...libRs.matchAll(/include_str!\("\.\.\/migrations\/([^"]+\.sql)"\)/g),
+    ...ledgerRs.matchAll(/include_str!\("\.\.\/migrations\/([^"]+\.sql)"\)/g),
   ]
     .map((m) => m[1])
     .sort();
@@ -63,26 +64,26 @@ function loadMigrations() {
 
   assert(
     notInLib.length === 0,
-    `drift check: every migration file is wired into lib.rs — ${notInLib.length} on disk but not referenced (${notInLib.join(", ") || "none"})`
+    `drift check: every migration file is wired into migrations.rs — ${notInLib.length} on disk but not referenced (${notInLib.join(", ") || "none"})`
   );
   assert(
     notOnDisk.length === 0,
-    `drift check: every lib.rs include_str! file exists on disk — ${notOnDisk.length} referenced but missing (${notOnDisk.join(", ") || "none"})`
+    `drift check: every migrations.rs include_str! file exists on disk — ${notOnDisk.length} referenced but missing (${notOnDisk.join(", ") || "none"})`
   );
 
   // Ordering contract: the smoke test applies migrations by filename order,
-  // while lib.rs assigns explicit version numbers. Both must agree and be
+  // while migrations.rs assigns explicit version numbers. Both must agree and be
   // strictly sequential 1..N — a gap, duplicate, or misnumber would apply
   // migrations in a different order than the app ships them.
   const fileVersions = onDisk.map((f) => Number(f.split("-")[0]));
-  const libVersions = [...libRs.matchAll(/migration\(\s*(\d+),/g)].map((m) => Number(m[1]));
+  const libVersions = [...ledgerRs.matchAll(/migration\(\s*(\d+),/g)].map((m) => Number(m[1]));
   const ordered =
     fileVersions.every((v, i) => v === i + 1) &&
     libVersions.length === fileVersions.length &&
     libVersions.every((v, i) => v === fileVersions[i]);
   assert(
     ordered,
-    `drift check: migration versions are sequential and match lib.rs (files: ${fileVersions.join(", ")}, lib.rs: ${libVersions.join(", ")})`
+    `drift check: migration versions are sequential and match migrations.rs (files: ${fileVersions.join(", ")}, migrations.rs: ${libVersions.join(", ")})`
   );
   return onDisk;
 }

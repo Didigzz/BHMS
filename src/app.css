@@ -67,6 +67,25 @@
   transition: background-color 0.3s ease;
 }
 
+/* The browser's default 8px body margin was never reset. In a fixed, full-screen
+   app it only ever steals space: an 8px dead band above the page content and
+   8px off each side of the column. On a phone that mattered — the status bar and
+   the gesture bar are already taking the top and the bottom. */
+body {
+  margin: 0;
+}
+
+/* Zoom lock (dashboard-mobile-polish-spec §4). Pinch, double-tap, and text
+   zoom would scale the fixed dock and gear off their anchors, so the app
+   renders at one fixed scale. `pan-x pan-y` keeps page/sheet/row scrolling.
+   Trade-off accepted: the OS text-size setting can no longer enlarge the UI. */
+html,
+body {
+  touch-action: pan-x pan-y;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 /* The dark palette is intentionally declared twice: `[data-theme="dark"]`
    covers an explicit Dark choice (even when the OS is light), and the media
    query covers "system"/unset — i.e. follow-the-device, including the brief
@@ -255,10 +274,21 @@ html.theme-switching {
 }
 
 /* ---- page scaffold ---- */
+/* One column at every width. This was always the phone design; the wide-screen
+   layout that stretched past 760px went with the sidebar, so a maximized window
+   renders the same 560px column. The 96px bottom padding is dock clearance and
+   is needed everywhere now that the floating dock exists at every width. */
 main {
   max-width: 560px;
   margin: 0 auto;
-  padding: 24px 16px 96px;
+  /* This build is edge-to-edge (MainActivity calls enableEdgeToEdge(),
+     targetSdk is 36, and app.html sets viewport-fit=cover), so the status bar
+     and the gesture bar are painted *over* the WebView. The top and bottom
+     paddings therefore have to carry their insets: without them the first
+     heading sits under the clock and the last row hides behind the floating
+     dock. The bottom figure tracks the dock, which grows by the same inset, so
+     the gap between the last row and the dock stays a constant 21px. */
+  padding: calc(24px + env(safe-area-inset-top, 0px)) 16px calc(96px + env(safe-area-inset-bottom, 0px));
 }
 
 h1 {
@@ -578,7 +608,11 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
+  /* A full-height panel is centred, so its top and bottom edges can come within
+     16px of the screen edge — inside the status bar and the gesture bar. Both
+     carry the inset now; `max()` keeps the designed 16px wherever the device
+     reports no inset at all (desktop, and every browser preview). */
+  padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   transition: background-color 0.25s ease;
 }
@@ -591,7 +625,10 @@ h1 {
   padding: 20px;
   width: 100%;
   max-width: 480px;
+  /* dvh measures the *visible* viewport, so the panel still fits once the
+     on-screen keyboard is up; vh is the fallback for older engines. */
   max-height: 90vh;
+  max-height: 90dvh;
   overflow-y: auto;
   box-sizing: border-box;
   box-shadow: var(--shadow-modal);
@@ -673,5 +710,29 @@ h1 {
   .card,
   .modal > * {
     border: 1px solid var(--label-3);
+  }
+}
+
+/* ---- touch targets ----
+   The shared controls above were drawn for a mouse: 38px buttons, 36px
+   segmented items, 33px chips. A fingertip needs 44px, and every one of these
+   is a top-level action — Add, Save, Export, filter, view switch — so on a
+   touch device they grow to the minimum. `pointer: coarse` covers Android and
+   iOS and leaves the denser desktop layout above untouched.
+
+   This costs vertical density: buttons and chips are ~6-11px taller on a
+   phone, which is the deliberate trade for targets the landlord can hit
+   without aiming. */
+@media (pointer: coarse) {
+  .btn,
+  .segmented button,
+  .chips button {
+    min-height: 44px;
+  }
+
+  /* "All" and "Paid" are narrower than they are tall — pad the pill out to a
+     square target rather than letting the shortest labels be the hardest taps. */
+  .chips button {
+    min-width: 44px;
   }
 }

@@ -5,6 +5,8 @@
   import { formatDate, formatMonthRange, monthKeyOf, phpPesoPrecise } from "$lib/format";
   import { heldBalanceOf } from "$lib/held-balance";
   import { pushOverlay } from "$lib/back-stack";
+  import Icon from "$lib/components/Icon.svelte";
+  import HandCoins from "@lucide/svelte/icons/hand-coins";
   import type { PaymentRecord, Tenant } from "./types";
 
   let {
@@ -138,7 +140,7 @@
     {#if heldBalanceOf({ advance_held: advanceHeld, deposit_held: depositHeld }) > 0}
       <div class="held-section">
         <div class="held-info">
-          <span class="held-amount">💰 {phpPesoPrecise(heldBalanceOf({ advance_held: advanceHeld, deposit_held: depositHeld }))} held</span>
+          <span class="held-amount"><Icon icon={HandCoins} size={16} /> {phpPesoPrecise(heldBalanceOf({ advance_held: advanceHeld, deposit_held: depositHeld }))} held</span>
           <span class="held-split">
             {#if advanceHeld > 0 && depositHeld > 0}
               {phpPesoPrecise(advanceHeld)} advance · {phpPesoPrecise(depositHeld)} deposit
@@ -245,6 +247,9 @@
   }
 
   .held-amount {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     font-weight: 800;
     font-size: 0.95rem;
     color: var(--accent-deep);

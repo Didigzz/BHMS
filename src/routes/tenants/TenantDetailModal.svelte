@@ -196,6 +196,15 @@
     outline-offset: 2px;
   }
 
+  /* Touch: the only way to dismiss the detail sheet without the hardware back
+     button, at a 32px target. */
+  @media (pointer: coarse) {
+    .detail-close {
+      width: 44px;
+      height: 44px;
+    }
+  }
+
   /* ---- label / value rows, Settings-list style ---- */
   .detail-rows {
     display: flex;

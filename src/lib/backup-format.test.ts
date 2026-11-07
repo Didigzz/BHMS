@@ -8,12 +8,15 @@ import {
   FORMAT_VERSION,
   REQUIRED_TABLES,
   buildBackupEnvelope,
+  canReadBackupFile,
   canonicalTablesString,
   checksumOf,
+  compareBackupToLive,
   formatBackupFileName,
   looksLikeSqlite,
   parseBackupBytes,
   parseBackupFile,
+  refuseBackupFileName,
   sealBackupEnvelope,
   serializeBackup,
   sha256Hex,
@@ -62,6 +65,23 @@ function populatedTables(): Record<string, BackupTablePayload> {
     notifications_log: payload(["id", "tenant_id", "kind", "due_date", "notified_at"], [
       { id: 1, tenant_id: 7, kind: "reminder", due_date: "2026-09-14", notified_at: "2026-09-11T08:00:00.000Z" },
     ]),
+    amenity_bills: payload(
+      ["id", "amenity_name", "billing_method", "total_amount", "billing_date", "billing_period", "notes", "division_mode", "status", "meter_start", "meter_end", "price_per_unit", "created_at", "updated_at"],
+      [
+        { id: 1, amenity_name: "Kuryente — Main Meter", billing_method: "shared", total_amount: 1000, billing_date: "2026-09-01", billing_period: "2026-09", notes: null, division_mode: "auto", status: "active", meter_start: null, meter_end: null, price_per_unit: null, created_at: "2026-09-01T08:00:00.000Z", updated_at: "2026-09-01T08:00:00.000Z" },
+        { id: 2, amenity_name: "Tubig — Rooms 1+2", billing_method: "connected", total_amount: 8000, billing_date: "2026-09-02", billing_period: "2026-09", notes: "Joint submeter", division_mode: "manual", status: "cancelled", meter_start: 100, meter_end: 150, price_per_unit: 5, created_at: "2026-09-02T08:00:00.000Z", updated_at: "2026-09-03T08:00:00.000Z" },
+      ]
+    ),
+    amenity_bill_tenants: payload(
+      ["id", "bill_id", "tenant_id", "amount", "is_excluded", "exclusion_reason", "payment_status", "tenant_name_snapshot", "room_number_snapshot"],
+      [
+        { id: 1, bill_id: 1, tenant_id: 7, amount: 500, is_excluded: 0, exclusion_reason: null, payment_status: "Paid", tenant_name_snapshot: "Maria Peña ₱", room_number_snapshot: "Room A" },
+        { id: 2, bill_id: 1, tenant_id: 9, amount: 0, is_excluded: 1, exclusion_reason: "Moved out mid-cycle", payment_status: "Unpaid", tenant_name_snapshot: "🧑‍🌾 Boarder “Anon”", room_number_snapshot: "Room A" },
+      ]
+    ),
+    amenity_bill_rooms: payload(["id", "bill_id", "room_id", "room_number_snapshot"], [
+      { id: 1, bill_id: 2, room_id: 2, room_number_snapshot: "Kuwarto ñ—2" },
+    ]),
   };
 }
 
@@ -74,6 +94,9 @@ function emptyTables(): Record<string, BackupTablePayload> {
     // A fresh install still has seeded settings — an "empty" backup is never 0 rows total.
     settings: payload(["key", "value"], [{ key: "house_name", value: "DIGAL" }]),
     notifications_log: payload(["id"], []),
+    amenity_bills: payload(["id", "amenity_name"], []),
+    amenity_bill_tenants: payload(["id"], []),
+    amenity_bill_rooms: payload(["id"], []),
   };
 }
 
@@ -254,6 +277,154 @@ describe("formatBackupFileName", () => {
 });
 
 // ---------------------------------------------------------------------------
+// file-name admission — only a lowercase .digal name is readable
+// ---------------------------------------------------------------------------
+
+describe("backup file admission", () => {
+  it("admits any name ending in lowercase .digal — the stem is irrelevant", () => {
+    for (const name of [
+      "BHMS-Backup-2026-09-14.digal",
+      "mybackup.digal",
+      "copy of BHMS.digal",
+      "a.b.digal",
+    ]) {
+      expect(canReadBackupFile(name)).toBe(true);
+      expect(refuseBackupFileName(name)).toBeNull();
+    }
+  });
+
+  it("refuses a .json file by name", () => {
+    const refused = refuseBackupFileName("BHMS-Backup-2026-09-14.digal.json");
+    expect(refused?.reason).toBe("wrong-extension");
+    expect(refused?.message).toBe(BACKUP_MESSAGES.wrongFileType(".json"));
+  });
+
+  it("refuses a .txt or extension-less file", () => {
+    expect(refuseBackupFileName("backup.txt")?.message).toBe(BACKUP_MESSAGES.wrongFileType(".txt"));
+    expect(refuseBackupFileName("backup")?.message).toBe(BACKUP_MESSAGES.wrongFileType(""));
+    expect(refuseBackupFileName("backup.digal.txt")?.message).toBe(
+      BACKUP_MESSAGES.wrongFileType(".txt")
+    );
+  });
+
+  it("refuses an uppercase extension, naming the case as the problem", () => {
+    for (const [name, found] of [
+      ["X.DIGAL", ".DIGAL"],
+      ["X.Digal", ".Digal"],
+    ]) {
+      expect(canReadBackupFile(name)).toBe(false);
+      const refused = refuseBackupFileName(name);
+      expect(refused?.reason).toBe("wrong-extension");
+      expect(refused?.message).toBe(BACKUP_MESSAGES.wrongCase(found));
+    }
+  });
+
+  it("keeps the dedicated old-format message for a raw database file", () => {
+    for (const name of ["rentease-backup-2026-08-06.db", "boarding-house.sqlite", "BACKUP.DB"]) {
+      expect(refuseBackupFileName(name)).toMatchObject({
+        reason: "old-format",
+        message: BACKUP_MESSAGES.oldFormat,
+      });
+    }
+  });
+
+  it("refuses valid backup contents behind a .json name — the name is the gate", () => {
+    const { text } = makeFile();
+    const result = parseBackupBytes(utf8Encode(text), "BHMS-Backup-2026-09-14.digal.json");
+    expectFailure(result, "wrong-extension", BACKUP_MESSAGES.wrongFileType(".json"));
+  });
+
+  it("admits those same bytes behind a .digal name", () => {
+    const { text } = makeFile();
+    const result = parseBackupBytes(utf8Encode(text), "BHMS-Backup-2026-09-14.digal");
+    expect(result.ok).toBe(true);
+  });
+
+  it("reports the name before the contents when both are wrong", () => {
+    // An old raw database renamed to .json is refused for its NAME, not for its
+    // SQLite header — the name gate is the first check that runs.
+    const bytes = utf8Encode("SQLite format 3\u0000rest of the database");
+    expectFailure(
+      parseBackupBytes(bytes, "old-backup.json"),
+      "wrong-extension",
+      BACKUP_MESSAGES.wrongFileType(".json")
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// comparing a backup against what the device holds
+// ---------------------------------------------------------------------------
+
+describe("compareBackupToLive", () => {
+  const counts = (values: [string, number][]) =>
+    values.map(([table, count]) => ({ table, label: table, count }));
+
+  it("flags a file that carries less than the device already holds", () => {
+    const result = compareBackupToLive(counts([["tenants", 12], ["rooms", 5]]), {
+      tenants: 34,
+      rooms: 12,
+    });
+    expect(result.isSmaller).toBe(true);
+    expect(result.backupTotal).toBe(17);
+    expect(result.liveTotal).toBe(46);
+    expect(result.reductions).toEqual([
+      { table: "tenants", label: "tenants", backup: 12, live: 34 },
+      { table: "rooms", label: "rooms", backup: 5, live: 12 },
+    ]);
+  });
+
+  it("lists the biggest loss first", () => {
+    const result = compareBackupToLive(counts([["rooms", 5], ["tenants", 12]]), {
+      tenants: 34,
+      rooms: 12,
+    });
+    expect(result.reductions.map((r) => r.table)).toEqual(["tenants", "rooms"]);
+  });
+
+  it("stays quiet when the file carries more data", () => {
+    const result = compareBackupToLive(counts([["tenants", 34]]), { tenants: 12 });
+    expect(result.isSmaller).toBe(false);
+    expect(result.reductions).toEqual([]);
+  });
+
+  it("stays quiet when the two match exactly", () => {
+    const result = compareBackupToLive(counts([["tenants", 12]]), { tenants: 12 });
+    expect(result.isSmaller).toBe(false);
+    expect(result.reductions).toEqual([]);
+  });
+
+  it("treats a table the live database lacks as zero", () => {
+    const result = compareBackupToLive(counts([["tenants", 0]]), {});
+    expect(result.isSmaller).toBe(false);
+    expect(result.reductions).toEqual([]);
+  });
+
+  it("flags an empty backup against a populated device", () => {
+    const result = compareBackupToLive(
+      counts([["tenants", 0], ["rooms", 0], ["settings", 5]]),
+      { tenants: 34, rooms: 12, settings: 5 }
+    );
+    expect(result.isSmaller).toBe(true);
+    expect(result.backupTotal).toBe(5);
+    expect(result.liveTotal).toBe(51);
+  });
+
+  it("still reports the reductions when the totals come out level", () => {
+    // Tenants dropped by 5 while rooms gained 5, so the totals match — but the
+    // warning is advisory and the landlord's confirmation decides.
+    const result = compareBackupToLive(counts([["tenants", 5], ["rooms", 15]]), {
+      tenants: 10,
+      rooms: 10,
+    });
+    expect(result.isSmaller).toBe(false);
+    expect(result.reductions).toEqual([
+      { table: "tenants", label: "tenants", backup: 5, live: 10 },
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // parse + validate
 // ---------------------------------------------------------------------------
 
@@ -269,7 +440,7 @@ describe("parseBackupFile — happy path", () => {
       appVersion: CURRENT_APP_VERSION,
       formatVersion: FORMAT_VERSION,
       isEmpty: false,
-      totalRows: 9,
+      totalRows: 14,
     });
     expect(result.snapshot.summary.counts.map((c) => c.table)).toEqual([...REQUIRED_TABLES]);
     expect(result.snapshot.summary.counts[0]).toEqual({ table: "rooms", label: "rooms", count: 2 });
@@ -329,12 +500,14 @@ describe("parseBackupFile — refusals", () => {
     expectFailure(parseBackupFile(stripped), "missing-tables", BACKUP_MESSAGES.incomplete);
   });
 
-  it("rejects a file missing a required table", () => {
+  it("tolerates an absent table, so a stripped file is caught by the checksum", () => {
     const { text } = makeFile();
     const stripped = mutate(text, (parsed) => {
       delete (parsed.tables as Record<string, unknown>).payments;
     });
-    expectFailure(parseBackupFile(stripped), "missing-table", BACKUP_MESSAGES.missingTable("payments"));
+    // An absent payload imports as empty (§13); without re-sealing, the edit is
+    // what the checksum catches.
+    expectFailure(parseBackupFile(stripped), "checksum-mismatch", BACKUP_MESSAGES.checksumMismatch);
   });
 
   it("rejects a row_count that disagrees with the rows array (truncated file)", () => {
@@ -395,6 +568,59 @@ describe("parseBackupFile — refusals", () => {
 });
 
 // ---------------------------------------------------------------------------
+// tolerant import (amenity-billing-spec.md §13, decision #30)
+// ---------------------------------------------------------------------------
+
+/** A file written before the amenity tables existed — re-sealed so only the absent payload is under test. */
+function agedFile(): string {
+  const { text } = makeFile();
+  const parsed = JSON.parse(text) as Record<string, any>;
+  delete parsed.tables.amenity_bills;
+  delete parsed.tables.amenity_bill_tenants;
+  delete parsed.tables.amenity_bill_rooms;
+  return serializeBackup(sealBackupEnvelope(parsed as unknown as BackupEnvelope));
+}
+
+function resealed(mutate: (parsed: Record<string, any>) => void): string {
+  const { text } = makeFile();
+  const parsed = JSON.parse(text) as Record<string, any>;
+  mutate(parsed);
+  return serializeBackup(sealBackupEnvelope(parsed as unknown as BackupEnvelope));
+}
+
+describe("tolerant import", () => {
+  it("accepts a backup that predates the amenity tables and reports them empty", () => {
+    const result = parseBackupFile(agedFile(), "BHMS-Backup-2026-09-01.digal");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const counts = result.snapshot.summary.counts;
+    expect(counts.filter((c) => c.table.startsWith("amenity_bill")).map((c) => c.count)).toEqual([0, 0, 0]);
+    expect(counts.find((c) => c.table === "rooms")?.count).toBe(2);
+    expect(result.snapshot.summary.totalRows).toBe(9);
+  });
+
+  it("accepts a pre-075 file whose amenity_bills still carries amenity_type", () => {
+    const text = resealed((parsed) => {
+      parsed.tables.amenity_bills.columns.push("amenity_type");
+      for (const row of parsed.tables.amenity_bills.rows) row.amenity_type = "Electricity";
+    });
+    const result = parseBackupFile(text);
+    // The column is carried through by the parser and dropped by the installer
+    // (its loader keeps only columns the rebuilt schema has).
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.snapshot.envelope.tables.amenity_bills.columns).toContain("amenity_type");
+  });
+
+  it("still rejects a table payload that is not an object", () => {
+    const result = parseBackupFile(resealed((parsed) => { parsed.tables.payments = "nope"; }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("missing-table");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // version sync
 // ---------------------------------------------------------------------------
 
@@ -415,6 +641,9 @@ describe("app version", () => {
       "reservations",
       "settings",
       "notifications_log",
+      "amenity_bills",
+      "amenity_bill_tenants",
+      "amenity_bill_rooms",
     ]);
   });
 });

@@ -102,6 +102,7 @@ export interface BackupSnapshot {
 
 export type BackupFailureReason =
   | "old-format"
+  | "wrong-extension"
   | "not-json"
   | "wrong-marker"
   | "newer-format"
@@ -128,6 +129,15 @@ export type BackupParseResult = { ok: true; snapshot: BackupSnapshot } | BackupF
  */
 export const BACKUP_MESSAGES = {
   oldFormat: "That's an old-format backup (.db). Only .digal backups can be restored.",
+  wrongFileType: (found: string) =>
+    found
+      ? `That file can't be restored — it's a ${found} file, not a .digal backup.`
+      : "That file can't be restored — its name has no extension. Only .digal backups can be restored.",
+  wrongCase: (found: string) =>
+    `That file can't be restored — its name ends in ${found}. The extension must be lowercase .digal.`,
+  smallerBackup: (backupTotal: number, liveTotal: number) =>
+    `This backup holds less data than this device (${backupTotal} records in the file, ${liveTotal} on this device). Importing it replaces everything, so the extra records will be removed.`,
+  noSafetyCopy: "There is no safety copy on this device to restore.",
   notJson: "That file is not a BHMS backup — it isn't valid JSON.",
   notBackup: "That file isn't a BHMS backup.",
   incomplete: "This backup is incomplete — its data tables are missing or damaged.",
@@ -139,7 +149,7 @@ export const BACKUP_MESSAGES = {
     `This backup was made by a newer version of BHMS (format v${version}). Update the app, then restore it.`,
   exportFailed: (reason: string) => `Export failed — the backup could not be saved. ${reason}`,
   exportVerifyFailed:
-    "Export failed — the saved file could not be re-opened. Nothing was changed in your data.",
+    "Export failed — the saved file could not be verified on this device. Nothing was changed in your data.",
   safetyCopyFailed:
     "Restore cancelled — BHMS could not save a safety copy of your current data. Nothing was changed.",
   restoreFailed: (reason: string) => `Restore failed — your current data was not changed. ${reason}`,
@@ -441,6 +451,54 @@ export function formatBackupFileName(
 }
 
 // ---------------------------------------------------------------------------
+// Comparing a backup against what the device already holds
+// ---------------------------------------------------------------------------
+
+/** A table where the backup carries fewer rows than the database has now. */
+export interface BackupReduction {
+  table: string;
+  label: string;
+  backup: number;
+  live: number;
+}
+
+export interface BackupSizeComparison {
+  /** True when the file carries fewer rows in total than the database has now. */
+  isSmaller: boolean;
+  backupTotal: number;
+  liveTotal: number;
+  /** Per-table reductions, biggest loss first, for the warning copy. */
+  reductions: BackupReduction[];
+}
+
+/**
+ * Compare a validated backup against what the database holds now.
+ *
+ * Importing always replaces everything, so the case worth warning about is a
+ * file carrying *less* than the device already has: a landlord who picks an old
+ * backup should see both numbers before anything is erased. The warning is
+ * advisory — a confirmed import proceeds.
+ */
+export function compareBackupToLive(
+  backupCounts: { table: string; label: string; count: number }[],
+  liveCounts: Record<string, number>
+): BackupSizeComparison {
+  const reductions: BackupReduction[] = [];
+  let backupTotal = 0;
+  let liveTotal = 0;
+
+  for (const { table, label, count } of backupCounts) {
+    const live = liveCounts[table] ?? 0;
+    backupTotal += count;
+    liveTotal += live;
+    if (count < live) reductions.push({ table, label, backup: count, live });
+  }
+
+  reductions.sort((a, b) => b.live - b.backup - (a.live - a.backup));
+  return { isSmaller: backupTotal < liveTotal, backupTotal, liveTotal, reductions };
+}
+
+// ---------------------------------------------------------------------------
 // Parse + validate
 // ---------------------------------------------------------------------------
 
@@ -459,6 +517,67 @@ function failure(reason: BackupFailureReason, message: string, table?: string): 
   return { ok: false, reason, message, ...(table ? { table } : {}) };
 }
 
+// ---------------------------------------------------------------------------
+// File-name admission
+//
+// Only a `.digal` file may be read, whatever it contains: a `.json` or `.txt`
+// file is refused even when the backup inside it is perfectly valid, because the
+// extension is how the landlord identifies the format they are handling. The
+// check runs on the NAME, before a single byte is inspected.
+//
+// One predicate serves every entry point — the file picker, the byte parser,
+// and the export verifier — so the part that writes a backup and the part that
+// reads one can never disagree about what a backup is called.
+// ---------------------------------------------------------------------------
+
+/** The only extension a readable backup may carry. */
+export const DIGAL_EXTENSION = ".digal";
+
+/**
+ * Extensions that get their own message rather than the generic refusal: a
+ * landlord who kept a raw database file should be told what that file is, not
+ * merely that its name is wrong.
+ */
+const LEGACY_DATABASE_EXTENSIONS = [".db", ".sqlite"];
+
+/** Does this name end in a readable `.digal` extension? Case-sensitive. */
+export function canReadBackupFile(fileName: string): boolean {
+  return fileName.endsWith(DIGAL_EXTENSION);
+}
+
+/** Everything from the last dot, e.g. `.json`. Empty when the name carries none. */
+function extensionOf(fileName: string): string {
+  const dot = fileName.lastIndexOf(".");
+  return dot > 0 ? fileName.slice(dot) : "";
+}
+
+function endsWithIgnoringCase(fileName: string, extensions: string[]): boolean {
+  const lower = fileName.toLowerCase();
+  return extensions.some((extension) => lower.endsWith(extension));
+}
+
+/**
+ * Refuse a picked file by its name, or return `null` when it may be read.
+ *
+ * The name — not the contents — decides whether a file is a candidate backup at
+ * all. An old raw database keeps its dedicated message; a `.DIGAL` name is
+ * refused but told precisely why, since Windows and macOS match the picker's
+ * `*.digal` filter case-insensitively and therefore offer it for selection.
+ */
+export function refuseBackupFileName(fileName: string): BackupFailure | null {
+  if (canReadBackupFile(fileName)) return null;
+
+  if (endsWithIgnoringCase(fileName, LEGACY_DATABASE_EXTENSIONS)) {
+    return failure("old-format", BACKUP_MESSAGES.oldFormat);
+  }
+
+  if (endsWithIgnoringCase(fileName, [DIGAL_EXTENSION])) {
+    return failure("wrong-extension", BACKUP_MESSAGES.wrongCase(extensionOf(fileName)));
+  }
+
+  return failure("wrong-extension", BACKUP_MESSAGES.wrongFileType(extensionOf(fileName)));
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -474,6 +593,10 @@ function isBackupValue(value: unknown): value is BackupValue {
  * failure carries its own reason + locked message (spec §4.4/§4.7).
  */
 export function parseBackupBytes(bytes: Uint8Array, fileName: string): BackupParseResult {
+  // The name gate comes first: contents are only worth inspecting once the file
+  // is a candidate backup at all.
+  const refused = refuseBackupFileName(fileName);
+  if (refused) return refused;
   if (looksLikeSqlite(bytes)) {
     return failure("old-format", BACKUP_MESSAGES.oldFormat);
   }
@@ -506,6 +629,14 @@ export function parseBackupFile(text: string, fileName = "backup.digal"): Backup
   const validated: Record<string, { columns: string[]; row_count: number; rows: BackupRow[] }> = {};
   for (const name of REQUIRED_TABLES) {
     const table = tables[name];
+    // A backup written before a table existed simply has no payload for it:
+    // restore it as empty rather than refusing the whole file
+    // (amenity-billing-spec.md §13, decision #30). A present-but-malformed
+    // table is still a hard failure below.
+    if (table === undefined || table === null) {
+      validated[name] = { columns: [], row_count: 0, rows: [] };
+      continue;
+    }
     if (!isPlainObject(table)) return failure("missing-table", BACKUP_MESSAGES.missingTable(name), name);
 
     const rawColumns = table.columns;

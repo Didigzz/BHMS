@@ -15,7 +15,8 @@
 //   6. rebuild: fresh schema → triggers dropped → rows loaded → triggers
 //      recreated → id counters fixed → integrity + foreign-key checks,
 //   7. row-compare every table against the source,
-//   8. negative pass (corrupt / truncated / missing table / newer version),
+//   8. negative pass (corrupt / truncated / malformed table / newer version),
+//      plus the tolerant-import pass (a backup predating the amenity tables),
 //   9. empty-database pass.
 //
 // This is an independent implementation of the rebuild recipe the Rust
@@ -43,7 +44,7 @@ import {
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const MIGRATIONS_DIR = join(ROOT, "src-tauri", "migrations");
-const LIB_RS = join(ROOT, "src-tauri", "src", "lib.rs");
+const MIGRATIONS_RS = join(ROOT, "src-tauri", "src", "migrations.rs");
 
 const AUTOINCREMENT_TABLES = ["rooms", "tenants", "payments", "reservations", "notifications_log"];
 
@@ -62,20 +63,20 @@ function section(title) {
 }
 
 // ---------------------------------------------------------------------------
-// migrations (drift-checked against lib.rs, like smoke-sql.mjs)
+// migrations (drift-checked against migrations.rs, like smoke-sql.mjs)
 // ---------------------------------------------------------------------------
 
 function loadMigrations() {
   const onDisk = readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith(".sql"))
     .sort();
-  const libRs = readFileSync(LIB_RS, "utf8");
-  const referenced = [...libRs.matchAll(/include_str!\("\.\.\/migrations\/([^"]+\.sql)"\)/g)]
+  const ledgerRs = readFileSync(MIGRATIONS_RS, "utf8");
+  const referenced = [...ledgerRs.matchAll(/include_str!\("\.\.\/migrations\/([^"]+\.sql)"\)/g)]
     .map((m) => m[1])
     .sort();
   assert(
     onDisk.every((f) => referenced.includes(f)) && referenced.every((f) => onDisk.includes(f)),
-    `drift check: ${onDisk.length} migration files match lib.rs include_str! references`
+    `drift check: ${onDisk.length} migration files match migrations.rs include_str! references`
   );
   return onDisk;
 }
@@ -202,14 +203,15 @@ function rebuildFromBackup(tables, files) {
       .prepare(`SELECT name FROM pragma_table_info('${table}')`)
       .all()
       .map((r) => r.name);
-    for (const column of payload.columns) {
-      if (!live.includes(column)) throw new Error(`${table} has an unknown column: ${column}`);
-    }
-    const sql = `INSERT INTO "${table}" (${payload.columns.map((c) => `"${c}"`).join(",")}) VALUES (${payload.columns
+    // Columns this build no longer has (a pre-075 backup's amenity_type) are
+    // dropped, exactly like the Rust installer (spec §13).
+    const columns = payload.columns.filter((column) => live.includes(column));
+    if (columns.length === 0) continue;
+    const sql = `INSERT INTO "${table}" (${columns.map((c) => `"${c}"`).join(",")}) VALUES (${columns
       .map(() => "?")
       .join(",")})`;
     const stmt = db.prepare(sql);
-    for (const row of payload.rows) stmt.run(...payload.columns.map((c) => toSqlValue(row[c])));
+    for (const row of payload.rows) stmt.run(...columns.map((c) => toSqlValue(row[c])));
   }
 
   for (const trigger of triggers) db.exec(trigger.sql);
@@ -322,10 +324,44 @@ assert(
   "a modified payload fails the checksum"
 );
 
-const stripped = JSON.parse(text);
-delete stripped.tables.payments;
-const strippedResult = parseBackupFile(JSON.stringify(stripped));
-assert(!strippedResult.ok && strippedResult.reason === "missing-table", "a file missing a table is rejected");
+// A backup written before the amenity tables existed carries no payload for
+// them: it must still restore, with those tables empty
+// (amenity-billing-spec.md §13, decision #30). The file is re-sealed first so
+// the checksum stays valid and only the absent payload is under test.
+const older = JSON.parse(text);
+delete older.tables.amenity_bills;
+delete older.tables.amenity_bill_tenants;
+delete older.tables.amenity_bill_rooms;
+const olderResult = parseBackupFile(serializeBackup(sealBackupEnvelope(older)));
+assert(olderResult.ok, "a backup without the amenity tables is accepted (tolerant import)");
+if (olderResult.ok) {
+  const amenityCounts = olderResult.snapshot.summary.counts.filter((c) =>
+    c.table.startsWith("amenity_bill")
+  );
+  assert(
+    amenityCounts.length === 3 && amenityCounts.every((c) => c.count === 0),
+    "the absent tables are reported as empty"
+  );
+  const olderRestored = rebuildFromBackup(olderResult.snapshot.envelope.tables, migrationFiles);
+  assert(
+    olderRestored.prepare("SELECT COUNT(*) AS n FROM amenity_bills").get().n === 0,
+    "an absent amenity table restores as empty"
+  );
+  assert(
+    olderRestored.prepare("SELECT COUNT(*) AS n FROM tenants").get().n ===
+      older.tables.tenants.rows.length,
+    "the tables the backup does carry still restore"
+  );
+}
+
+// Present but malformed is still a hard failure.
+const malformed = JSON.parse(text);
+malformed.tables.payments = "not a table payload";
+const malformedResult = parseBackupFile(serializeBackup(sealBackupEnvelope(malformed)));
+assert(
+  !malformedResult.ok && malformedResult.reason === "missing-table",
+  "a malformed table payload is still rejected"
+);
 
 const newer = JSON.parse(text);
 newer.format_version = 2;
@@ -337,6 +373,28 @@ const legacyResult = parseBackupBytes(legacyBytes, "rentease-backup-2026-08-06.d
 assert(
   !legacyResult.ok && legacyResult.reason === "old-format",
   "an old .db backup is rejected with the old-format message"
+);
+
+// The name gate: only a lowercase .digal name is read, whatever it contains.
+const textBytes = utf8Encode(text);
+assert(
+  parseBackupBytes(textBytes, fileName).ok,
+  "a valid backup under its .digal name is admitted"
+);
+const renamedJson = parseBackupBytes(textBytes, "BHMS-Backup-2026-09-14.digal.json");
+assert(
+  !renamedJson.ok && renamedJson.reason === "wrong-extension",
+  "the same valid bytes behind a .json name are refused by the name gate"
+);
+const renamedTxt = parseBackupBytes(textBytes, "backup.txt");
+assert(
+  !renamedTxt.ok && renamedTxt.reason === "wrong-extension",
+  "a .txt file is refused by the name gate"
+);
+const uppercase = parseBackupBytes(textBytes, "BHMS-Backup-2026-09-14.DIGAL");
+assert(
+  !uppercase.ok && uppercase.reason === "wrong-extension",
+  "an uppercase .DIGAL extension is refused"
 );
 
 section("Empty database pass");

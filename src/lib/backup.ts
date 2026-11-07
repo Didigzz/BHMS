@@ -31,17 +31,22 @@ import {
   BACKUP_MESSAGES,
   REQUIRED_TABLES,
   buildBackupEnvelope,
+  canReadBackupFile,
+  compareBackupToLive,
   formatBackupFileName,
   parseBackupBytes,
   parseBackupFile,
+  refuseBackupFileName,
   sealBackupEnvelope,
   serializeBackup,
   sha256Hex,
   toBackupTable,
   utf8Encode,
+  type BackupSizeComparison,
   type BackupSnapshot,
   type BackupTablePayload,
 } from "./backup-format";
+import { runRestorePreflight, saveSafetyCopy } from "./db-health";
 
 export type BackupKind = "backup" | "before-restore";
 
@@ -51,12 +56,16 @@ export interface BackupResult {
   location: string;
   /** Device URI of the saved file; empty on desktop/preview (no share sheet). */
   uri: string;
+  /** The exact file text, so a second copy can be kept without rebuilding it. */
+  text: string;
 }
 
 export interface ChosenBackup {
   filePath: string;
   fileName: string;
   snapshot: BackupSnapshot;
+  /** How the file compares with what this device holds now. */
+  comparison: BackupSizeComparison;
 }
 
 /** What the Rust/platform writer reports back about the file it just wrote. */
@@ -119,6 +128,20 @@ async function collectTables(): Promise<Record<string, BackupTablePayload>> {
   return tables;
 }
 
+/**
+ * Row counts in the live database, for the "this backup holds less" warning.
+ * The settings table counts too — its seeded rows are records like any other.
+ */
+async function liveRowCounts(): Promise<Record<string, number>> {
+  const db = await getDb();
+  const counts: Record<string, number> = {};
+  for (const table of REQUIRED_TABLES) {
+    const rows = await db.select<{ n: number }[]>(`SELECT COUNT(*) AS n FROM ${table}`);
+    counts[table] = Number(rows[0]?.n ?? 0);
+  }
+  return counts;
+}
+
 /** Write the file to Downloads (Rust on device, the preview VFS in the browser). */
 async function saveBackupFile(text: string, fileName: string): Promise<SaveReport> {
   const bytes = utf8Encode(text);
@@ -154,19 +177,24 @@ export async function exportBackup(kind: BackupKind = "backup"): Promise<BackupR
     throw new Error(BACKUP_MESSAGES.exportFailed(String(e)));
   }
 
-  // Verify what actually landed on the device — a truncated or empty file must
-  // never be reported as a successful backup (spec §4.1 step 5).
+  // Verify what actually landed on the device — a truncated, empty, or
+  // wrongly-named file must never be reported as a successful backup
+  // (spec §4.1 step 5). The name is part of that proof: the app must never
+  // claim a backup it would itself refuse to import.
   const expectedBytes = utf8Encode(text);
+  const storedFileName = displayName(report.location) || fileName;
   const intact =
     report.bytes === expectedBytes.length &&
     report.sha256.toLowerCase() === sha256Hex(expectedBytes) &&
-    parseBackupFile(text, fileName).ok;
+    parseBackupFile(text, fileName).ok &&
+    canReadBackupFile(storedFileName);
   if (!intact) {
     throw new Error(BACKUP_MESSAGES.exportVerifyFailed);
   }
 
   if (kind === "backup") await setSetting("last_backup_date", todayIso());
-  return { fileName, location: report.location, uri: report.uri };
+  // Report the name the device really stored, never the one we asked for.
+  return { fileName: storedFileName, location: report.location, uri: report.uri, text };
 }
 
 /** Post-export share sheet (Android only; a no-op elsewhere). */
@@ -183,9 +211,12 @@ export async function shareBackup(fileName: string, uri: string): Promise<void> 
  * Open the file picker and validate the chosen file.
  *
  * Returns null when the user cancels and throws with the locked message when
- * the file is not a usable backup. The picker filters on `.digal` but accepts
- * whatever the user picks: custom extensions map unreliably to Android MIME
- * types, so the content is the real gate.
+ * the file is not a usable backup. Only a name ending in lowercase `.digal` is
+ * admitted: the picker's `*.digal` filter is a convenience, not the gate, since
+ * Android SAF maps extension filters to MIME types that a custom extension does
+ * not map to reliably. The name is checked before the file is read, and the
+ * contents are checked after — a `.json` file is refused even when the backup
+ * inside it is valid.
  */
 export async function chooseBackupFile(): Promise<ChosenBackup | null> {
   const src = await open({
@@ -197,10 +228,20 @@ export async function chooseBackupFile(): Promise<ChosenBackup | null> {
   if (!src || Array.isArray(src)) return null;
 
   const fileName = displayName(String(src));
+
+  // Refuse a wrongly-named file before reading it: the name decides whether
+  // this is a candidate backup at all, whatever the contents turn out to be.
+  const refused = refuseBackupFileName(fileName);
+  if (refused) throw new Error(refused.message);
+
   const bytes = await readFile(src);
   const result = parseBackupBytes(bytes, fileName);
   if (!result.ok) throw new Error(result.message);
-  return { filePath: String(src), fileName, snapshot: result.snapshot };
+
+  // Replacing is the whole point of an import, so the case worth warning about
+  // is a file carrying less than this device already has.
+  const comparison = compareBackupToLive(result.snapshot.summary.counts, await liveRowCounts());
+  return { filePath: String(src), fileName, snapshot: result.snapshot, comparison };
 }
 
 /** Reopen the live database (used on every failure path so the app stays usable). */
@@ -218,6 +259,12 @@ async function reopenQuiet(): Promise<void> {
  * failure; the live data is only ever replaced after every check has passed.
  */
 export async function importBackup(chosen: ChosenBackup): Promise<void> {
+  // 0. Refuse a restore that cannot possibly work, before anything is touched.
+  const preflight = await runRestorePreflight();
+  if (!preflight.canWriteDirectory || !preflight.canReadDatabase) {
+    throw new Error(preflight.reason ?? "RentEase cannot restore your data right now.");
+  }
+
   // 1. Mandatory safety copy of the data we are about to replace (spec §4.3.5).
   let safety: BackupResult;
   try {
@@ -225,6 +272,9 @@ export async function importBackup(chosen: ChosenBackup): Promise<void> {
   } catch {
     throw new Error(BACKUP_MESSAGES.safetyCopyFailed);
   }
+  // A second copy inside the app's own folder, so a recovery never depends on
+  // the landlord finding the one in Downloads. Best-effort by design.
+  await saveSafetyCopy(safety.text, safety.fileName);
 
   // 2. Rust re-validates the exact file text, rebuilds a fresh database from the
   //    migration chain, loads the rows, verifies integrity, then swaps the file

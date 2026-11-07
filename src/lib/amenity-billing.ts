@@ -1,4 +1,10 @@
-export const AMENITY_TYPES = [
+/**
+ * Quick-pick amenity names shown above the form's name field. These are
+ * suggestions, not a schema enum: a bill is a free-text `amenity_name` plus
+ * optional notes, so "Cable TV" or "Generator share" is just as valid
+ * (amenity-billing-spec.md §7.1, decision #20).
+ */
+export const AMENITY_PRESETS = [
   "Electricity",
   "Water",
   "Internet",
@@ -9,25 +15,53 @@ export const AMENITY_TYPES = [
   "Cleaning",
   "Other",
 ] as const;
-export type AmenityType = (typeof AMENITY_TYPES)[number];
+
 export type BillingMethod = "shared" | "per_room" | "connected";
 export type DivisionMode = "auto" | "manual";
+
+/**
+ * Locked, user-facing validation messages (amenity-billing-spec.md §12).
+ * Single source of truth: the actions and every form surface read them here
+ * rather than re-typing the strings (spec todo T10).
+ */
+export const AMENITY_MESSAGES = {
+  name: "Amenity name is required.",
+  amount: "Bill amount cannot be empty or negative.",
+  selection: "At least one tenant or room must be selected.",
+  exclusionReason: "An exclusion reason is required when excluding a tenant.",
+  connectedRooms: "Connected-room groups must contain at least two rooms.",
+  period: "Billing period must be a month like 2026-09.",
+  roomEmpty: "Room has no active tenants",
+  meterEnd: "Meter end cannot be less than start.",
+  meterPrice: "Price per unit cannot be negative.",
+  negativeAmount: "Manual tenant amounts cannot be negative.",
+} as const;
+
+/** Shares may run this far under the bill total; the landlord absorbs it (§8.1). */
+export const MAX_ABSORBED = 1;
+
+export function manualMismatchMessage(sum: number, total: number): string {
+  return `Manual tenant amounts must equal the total bill (currently ${round2(sum)} vs ${round2(total)}).`;
+}
 
 export function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export function calculateEqualShares(
-  total: number,
-  count: number,
-): number[] {
+/**
+ * Round down to centavos. Automatic splits floor every share so the shares can
+ * never exceed the bill total — the leftover fraction (always < ₱1) is the
+ * landlord's cost (amenity-billing-spec.md §8.1, decision #25).
+ */
+export function floor2(n: number): number {
+  return Math.floor(n * 100 + 1e-6) / 100;
+}
+
+/** Each share floored to 2dp; the caller absorbs `total − sum(shares)`. */
+export function calculateEqualShares(total: number, count: number): number[] {
   if (count <= 0) return [];
-  const per = round2(total / count);
-  const shares = Array(count).fill(per) as number[];
-  const sum = round2(per * count);
-  const diff = round2(total - sum);
-  shares[count - 1] = round2(shares[count - 1] + diff);
-  return shares;
+  const per = floor2(total / count);
+  return Array(count).fill(per) as number[];
 }
 
 export interface SharedSplitInput {
@@ -40,8 +74,70 @@ export interface SharedSplitInput {
 export interface SplitResult {
   shares: Map<number, number>;
   errors: string[];
+  /** Bill total − sum of shares; always ≥ 0 and < ₱1. */
+  absorbed: number;
 }
 
+function finish(shares: Map<number, number>, total: number, errors: string[]): SplitResult {
+  let sum = 0;
+  for (const value of shares.values()) sum = round2(sum + value);
+  return { shares, errors, absorbed: round2(Math.max(0, round2(total - sum))) };
+}
+
+/** Equal split across `ids` (all of them), floored to centavos. */
+function splitEqually(ids: number[], total: number): SplitResult {
+  const shares = new Map<number, number>();
+  const parts = calculateEqualShares(total, ids.length);
+  ids.forEach((id, index) => shares.set(id, parts[index]));
+  return finish(shares, total, []);
+}
+
+/**
+ * Manual split: tenants with an override keep their amount, and the remainder
+ * is re-split equally across the rest. With every tenant overridden the sum
+ * must equal the total within the ₱1 absorption window.
+ */
+function splitManual(
+  ids: number[],
+  total: number,
+  overrides: Map<number, number>,
+  errors: string[],
+): SplitResult {
+  const shares = new Map<number, number>();
+  const defined = ids.filter((id) => overrides.has(id));
+  const missing = ids.filter((id) => !overrides.has(id));
+
+  let definedSum = 0;
+  for (const id of defined) {
+    const amount = round2(overrides.get(id) ?? 0);
+    if (amount < 0) errors.push(AMENITY_MESSAGES.negativeAmount);
+    shares.set(id, amount);
+    definedSum = round2(definedSum + amount);
+  }
+
+  if (missing.length > 0) {
+    const remaining = round2(total - definedSum);
+    if (remaining < -0.005) {
+      errors.push(manualMismatchMessage(definedSum, total));
+    } else {
+      const parts = calculateEqualShares(remaining, missing.length);
+      missing.forEach((id, index) => shares.set(id, parts[index]));
+    }
+  } else {
+    const shortfall = round2(total - definedSum);
+    if (shortfall < -0.005 || shortfall > MAX_ABSORBED + 0.005) {
+      errors.push(manualMismatchMessage(definedSum, total));
+    }
+  }
+
+  return finish(shares, total, errors);
+}
+
+/**
+ * Shared Billing split. Excluded tenants are NOT part of `shares` — they are
+ * carried separately as `is_excluded` rows with a reason and a ₱0 charge
+ * (amenity-billing-spec.md §7.2, delta D5).
+ */
 export function calcSharedSplit(input: SharedSplitInput): SplitResult {
   const errors: string[] = [];
   const included = input.tenantIds.filter((id) => !input.excluded.has(id));
@@ -49,70 +145,44 @@ export function calcSharedSplit(input: SharedSplitInput): SplitResult {
   for (const [id, reason] of input.excluded) {
     if (!input.tenantIds.includes(id)) continue;
     if (!reason || reason.trim() === "") {
-      errors.push(`An exclusion reason is required when excluding a tenant.`);
+      errors.push(AMENITY_MESSAGES.exclusionReason);
       break;
     }
   }
 
-  if (included.length === 0 && input.tenantIds.length > 0) {
-    return { shares: new Map(), errors };
+  if (included.length === 0) {
+    if (input.tenantIds.length > 0) errors.push(AMENITY_MESSAGES.selection);
+    return { shares: new Map(), errors, absorbed: 0 };
+  }
+
+  const manualIds = included.filter((id) => input.manualOverrides.has(id));
+  const autoIds = included.filter((id) => !input.manualOverrides.has(id));
+
+  if (autoIds.length === 0 && manualIds.length > 0) {
+    return splitManual(included, input.total, input.manualOverrides, errors);
   }
 
   const shares = new Map<number, number>();
-
-  for (const id of input.tenantIds) {
-    if (input.excluded.has(id)) {
-      shares.set(id, 0);
-    }
-  }
-
   let manualSum = 0;
-  const manualIds: number[] = [];
-  for (const [id, amt] of input.manualOverrides) {
-    if (!included.includes(id)) continue;
-    if (amt < 0) errors.push("Manual tenant amounts must equal the total bill");
-    manualSum = round2(manualSum + amt);
-    manualIds.push(id);
-  }
-
-  if (manualSum > input.total + 0.005) {
-    errors.push(
-      `Manual tenant amounts must equal the total bill (currently ${manualSum} vs ${input.total}).`,
-    );
-  }
-
-  const autoIds = included.filter((id) => !input.manualOverrides.has(id));
-  const remaining = round2(input.total - manualSum);
-
-  if (autoIds.length > 0) {
-    if (remaining < -0.005) {
-      errors.push(
-        `Manual tenant amounts must equal the total bill (currently ${manualSum} vs ${input.total}).`,
-      );
-    } else {
-      const autoShares = calculateEqualShares(remaining, autoIds.length);
-      autoIds.forEach((id, idx) => shares.set(id, autoShares[idx]));
-    }
-  } else if (manualIds.length > 0) {
-    if (Math.abs(manualSum - input.total) > 0.01) {
-      errors.push(
-        `Manual tenant amounts must equal the total bill (currently ${manualSum} vs ${input.total}).`,
-      );
-    }
-  }
-
   for (const id of manualIds) {
-    shares.set(id, round2(input.manualOverrides.get(id) ?? 0));
+    const amount = round2(input.manualOverrides.get(id) ?? 0);
+    if (amount < 0) errors.push(AMENITY_MESSAGES.negativeAmount);
+    shares.set(id, amount);
+    manualSum = round2(manualSum + amount);
   }
 
-  if (input.excluded.size === 0 && input.manualOverrides.size === 0 && included.length > 0) {
-    const autoShares = calculateEqualShares(input.total, included.length);
-    included.forEach((id, idx) => shares.set(id, autoShares[idx]));
+  const remaining = round2(input.total - manualSum);
+  if (remaining < -0.005) {
+    errors.push(manualMismatchMessage(manualSum, input.total));
+  } else {
+    const parts = calculateEqualShares(remaining, autoIds.length);
+    autoIds.forEach((id, index) => shares.set(id, parts[index]));
   }
 
-  return { shares, errors };
+  return finish(shares, input.total, errors);
 }
 
+/** Remainder preview while the landlord edits one amount at a time. */
 export function recalcRemaining(
   total: number,
   overrides: Map<number, number>,
@@ -126,97 +196,38 @@ export function recalcRemaining(
   }).shares;
 }
 
+/**
+ * Per-Room Billing split (Room-Specific Amenity). `roomTenantIds` are the
+ * tenants currently occupying the selected room/pad.
+ */
 export function calcPerRoomSplit(
   roomTenantIds: number[],
   total: number,
   manualOverrides: Map<number, number>,
   mode: DivisionMode,
 ): SplitResult {
-  const errors: string[] = [];
   if (roomTenantIds.length === 0) {
-    errors.push("Room has no active tenants");
-    return { shares: new Map(), errors };
+    return { shares: new Map(), errors: [AMENITY_MESSAGES.roomEmpty], absorbed: 0 };
   }
-  if (mode === "auto") {
-    const shares = calculateEqualShares(total, roomTenantIds.length);
-    const map = new Map<number, number>();
-    roomTenantIds.forEach((id, idx) => map.set(id, shares[idx]));
-    return { shares: map, errors };
-  }
-  let manualSum = 0;
-  for (const id of roomTenantIds) {
-    manualSum = round2(manualSum + (manualOverrides.get(id) ?? 0));
-  }
-  const defined = roomTenantIds.filter((id) => manualOverrides.has(id));
-  if (defined.length > 0 && Math.abs(manualSum - total) > 0.01) {
-    const missing = roomTenantIds.filter((id) => !manualOverrides.has(id));
-    if (missing.length === 0) {
-      errors.push(
-        `Manual tenant amounts must equal the total bill (currently ${manualSum} vs ${total}).`,
-      );
-    } else {
-      const remaining = round2(total - manualSum + missing.reduce((a, id) => a + (manualOverrides.get(id) ?? 0), 0));
-      // For partial manual, recalc missing
-      const remainingManual = new Map<number, number>();
-      let sumDefined = 0;
-      for (const id of defined) {
-        const v = manualOverrides.get(id) ?? 0;
-        remainingManual.set(id, v);
-        sumDefined = round2(sumDefined + v);
-      }
-      const rem = round2(total - sumDefined);
-      const autoShares = calculateEqualShares(rem, missing.length);
-      missing.forEach((id, idx) => remainingManual.set(id, autoShares[idx]));
-      return { shares: remainingManual, errors };
-    }
-  }
-  const map = new Map<number, number>();
-  for (const id of roomTenantIds) map.set(id, round2(manualOverrides.get(id) ?? 0));
-  return { shares: map, errors };
+  if (mode === "auto") return splitEqually(roomTenantIds, total);
+  return splitManual(roomTenantIds, total, manualOverrides, []);
 }
 
+/**
+ * Connected Rooms / Joint Room Billing: the total divides across EVERY tenant
+ * of all joined rooms — never per room first (amenity-billing-spec.md §7.4).
+ */
 export function calcConnectedSplit(
   pooledTenantIds: number[],
   total: number,
   manualOverrides: Map<number, number>,
   mode: DivisionMode,
 ): SplitResult {
-  const errors: string[] = [];
   if (pooledTenantIds.length === 0) {
-    errors.push("At least one tenant or room must be selected.");
-    return { shares: new Map(), errors };
+    return { shares: new Map(), errors: [AMENITY_MESSAGES.selection], absorbed: 0 };
   }
-  if (mode === "auto") {
-    const shares = calculateEqualShares(total, pooledTenantIds.length);
-    const map = new Map<number, number>();
-    pooledTenantIds.forEach((id, idx) => map.set(id, shares[idx]));
-    return { shares: map, errors };
-  }
-  const defined = pooledTenantIds.filter((id) => manualOverrides.has(id));
-  let definedSum = 0;
-  for (const id of defined) definedSum = round2(definedSum + (manualOverrides.get(id) ?? 0));
-  const missing = pooledTenantIds.filter((id) => !manualOverrides.has(id));
-  if (missing.length === 0) {
-    if (Math.abs(definedSum - total) > 0.01) {
-      errors.push(
-        `Manual tenant amounts must equal the total bill (currently ${definedSum} vs ${total}).`,
-      );
-    }
-    const map = new Map<number, number>();
-    for (const id of pooledTenantIds) map.set(id, round2(manualOverrides.get(id) ?? 0));
-    return { shares: map, errors };
-  }
-  const remaining = round2(total - definedSum);
-  if (remaining < -0.005) {
-    errors.push(
-      `Manual tenant amounts must equal the total bill (currently ${definedSum} vs ${total}).`,
-    );
-  }
-  const autoShares = calculateEqualShares(Math.max(0, remaining), missing.length);
-  const map = new Map<number, number>();
-  for (const id of defined) map.set(id, round2(manualOverrides.get(id) ?? 0));
-  missing.forEach((id, idx) => map.set(id, autoShares[idx]));
-  return { shares: map, errors };
+  if (mode === "auto") return splitEqually(pooledTenantIds, total);
+  return splitManual(pooledTenantIds, total, manualOverrides, []);
 }
 
 export function calculateMeterTotal(
@@ -227,47 +238,77 @@ export function calculateMeterTotal(
   if (start == null || end == null || pricePerUnit == null) {
     return { units: null, total: null, error: null };
   }
-  if (pricePerUnit < 0) return { units: null, total: null, error: "Price per unit cannot be negative." };
-  if (end < start) return { units: null, total: null, error: "Meter end cannot be less than start." };
+  if (pricePerUnit < 0) {
+    return { units: null, total: null, error: AMENITY_MESSAGES.meterPrice };
+  }
+  if (end < start) {
+    return { units: null, total: null, error: AMENITY_MESSAGES.meterEnd };
+  }
   const units = round2(end - start);
   const total = round2(units * pricePerUnit);
   return { units, total, error: null };
 }
 
+/** Billing periods are month keys — `2026-09` — or empty for a date-only bill. */
+const PERIOD_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+export function isValidBillingPeriod(input: string): boolean {
+  return PERIOD_PATTERN.test(input.trim());
+}
+
+/** Trimmed period, or null when the landlord left it empty. */
 export function normalizeBillingPeriod(input: string | null): string | null {
   if (input == null) return null;
-  const t = input.trim();
-  if (t === "") return null;
-  return t;
+  const trimmed = input.trim();
+  if (trimmed === "") return null;
+  return trimmed;
+}
+
+export function validateBillingPeriod(input: string | null): string | null {
+  const period = normalizeBillingPeriod(input);
+  if (period == null) return null;
+  return isValidBillingPeriod(period) ? null : AMENITY_MESSAGES.period;
 }
 
 export interface ValidateBillInput {
+  amenityName?: string;
   amount: number;
   tenantIds: number[];
   roomIds: number[];
   method: BillingMethod;
   divisionMode: DivisionMode;
   shares: Map<number, number>;
+  billingPeriod?: string | null;
 }
 
+/** The one place every amenity-bill validation is decided (spec §12). */
 export function validateBill(input: ValidateBillInput): string | null {
+  if (input.amenityName != null && input.amenityName.trim() === "") {
+    return AMENITY_MESSAGES.name;
+  }
   if (!input.amount || isNaN(input.amount) || input.amount <= 0) {
-    return "Bill amount cannot be empty or negative.";
+    return AMENITY_MESSAGES.amount;
   }
   if (input.method === "shared" && input.tenantIds.length === 0) {
-    return "At least one tenant or room must be selected.";
+    return AMENITY_MESSAGES.selection;
   }
-  if ((input.method === "per_room" || input.method === "connected") && input.roomIds.length === 0) {
-    return "At least one tenant or room must be selected.";
+  if (
+    (input.method === "per_room" || input.method === "connected") &&
+    input.roomIds.length === 0
+  ) {
+    return AMENITY_MESSAGES.selection;
   }
   if (input.method === "connected" && input.roomIds.length < 2) {
-    return "Connected-room groups must contain at least two rooms.";
+    return AMENITY_MESSAGES.connectedRooms;
   }
+  const periodError = validateBillingPeriod(input.billingPeriod ?? null);
+  if (periodError) return periodError;
   if (input.divisionMode === "manual") {
     let sum = 0;
-    for (const v of input.shares.values()) sum = round2(sum + v);
-    if (Math.abs(sum - input.amount) > 0.01) {
-      return `Manual tenant amounts must equal the total bill (currently ${sum} vs ${input.amount}).`;
+    for (const value of input.shares.values()) sum = round2(sum + value);
+    const shortfall = round2(input.amount - sum);
+    if (shortfall < -0.005 || shortfall > MAX_ABSORBED + 0.005) {
+      return manualMismatchMessage(sum, input.amount);
     }
   }
   return null;
@@ -275,7 +316,7 @@ export function validateBill(input: ValidateBillInput): string | null {
 
 export function validateExclusionReason(isExcluded: boolean, reason: string | null): string | null {
   if (isExcluded && (!reason || reason.trim() === "")) {
-    return "An exclusion reason is required when excluding a tenant.";
+    return AMENITY_MESSAGES.exclusionReason;
   }
   return null;
 }

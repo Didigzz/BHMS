@@ -10,6 +10,9 @@
   import EarningsCard from "./EarningsCard.svelte";
   import { currentMonthKey, type EarningsPayment, type EarningsTenant } from "$lib/earnings";
   import type { DashboardRoom, TenantChip } from "./types";
+  import Icon from "$lib/components/Icon.svelte";
+  import CircleAlert from "@lucide/svelte/icons/circle-alert";
+  import Clock from "@lucide/svelte/icons/clock";
 
   let rooms: DashboardRoom[] = $state([]);
   let loading = $state(true);
@@ -34,7 +37,14 @@
     };
   }
 
-  async function loadDashboard() {
+  /**
+   * Load everything the dashboard shows. `silent` re-reads in the background —
+   * no loading flip, no cards unmounting, no scroll jump — which is how a
+   * payment recorded in the room sheet reaches the chips without a tab switch
+   * (dashboard-mobile-polish-spec §3).
+   */
+  async function loadDashboard(silent = false) {
+    if (!silent) loading = true;
     try {
       const db = await getDb();
       const roomRows = await db.select<
@@ -104,33 +114,24 @@
     } catch (e) {
       error = `Failed to load dashboard: ${String(e)}`;
     } finally {
-      loading = false;
+      if (!silent) loading = false;
     }
   }
 
   onMount(loadDashboard);
 
   /**
-   * Re-run exactly the two earnings queries after a payment mutation from the
-   * boarder sheet, so the Monthly Earnings card (and an open View Breakdown)
-   * update immediately — no tab switch or reload needed (payment-due-date-spec
-   * §5). `summary` in EarningsCard is $derived from these arrays, so both the
-   * headline numbers and the open breakdown refresh in place.
+   * Refresh the whole page in place after any successful mutation in the room
+   * sheet (payment, edit, apply, bed count, move-out, deposit refund). Silent
+   * by design: the sheet and its receipt stay open and nothing unmounts. A
+   * failed read keeps the last good data on screen.
+   *
+   * One path for rooms *and* earnings is deliberate — a callback that refreshed
+   * only half the page is what left an overdue chip red after payment
+   * (dashboard-mobile-polish-spec §3).
    */
-  async function refreshEarnings() {
-    try {
-      const db = await getDb();
-      earningsTenants = await db.select<EarningsTenant[]>(
-        `SELECT t.id, t.name, r.room_number, t.move_in_date, t.moved_out_date,
-                COALESCE(t.monthly_rate, r.monthly_rate) AS rate
-         FROM tenants t JOIN rooms r ON r.id = t.room_id`
-      );
-      earningsPayments = await db.select<EarningsPayment[]>(
-        "SELECT tenant_id, amount, covers_month, due_date FROM payments"
-      );
-    } catch {
-      // Keep the current numbers — the sheet already surfaced any error.
-    }
+  function refreshDashboard() {
+    void loadDashboard(true);
   }
 
   // Stat cards count people (chips), not beds — a multi-bed tenant is still
@@ -165,10 +166,10 @@
     {#if overdueCount + dueSoonCount > 0}
       <div class="summary-strip" aria-label="Payment summary">
         {#if overdueCount > 0}
-          <span class="summary-item summary-overdue">🔴 {overdueCount} overdue</span>
+          <span class="summary-item summary-overdue"><Icon icon={CircleAlert} size={16} /> {overdueCount} overdue</span>
         {/if}
         {#if dueSoonCount > 0}
-          <span class="summary-item summary-soon">🟡 {dueSoonCount} due this week</span>
+          <span class="summary-item summary-soon"><Icon icon={Clock} size={16} /> {dueSoonCount} due this week</span>
         {/if}
       </div>
     {/if}
@@ -195,7 +196,9 @@
   {/if}
 
   {#if detailRoom}
-    <RoomDetailSheet room={detailRoom} onClose={() => (detailRoom = null)} onDataChanged={refreshEarnings} />
+    <!-- `detailRoom` is a snapshot and stays the same object across refreshes:
+         rebuilding it would remount the sheet and close an open receipt. -->
+    <RoomDetailSheet room={detailRoom} onClose={() => (detailRoom = null)} onDataChanged={refreshDashboard} />
   {/if}
 </main>
 
@@ -228,6 +231,9 @@
   }
 
   .summary-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     border-radius: 999px;
     padding: 4px 12px;
     font-size: 0.8rem;

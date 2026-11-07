@@ -35,7 +35,11 @@ export interface Tenant {
   /** Remaining deposit money (consumed last; refundable per settings). */
   deposit_held: number;
   moved_out_date: string | null;
-  /** Amenity Balance — sum of unpaid amenity shares (separate from rent). */
+  /**
+   * Amenity Balance — sum of this tenant's shares on active (non-cancelled)
+   * amenity bills, separate from rent. Marking a share Paid does NOT change it;
+   * only editing or cancelling a bill does (amenity-billing-spec.md §8).
+   */
   amenity_balance: number;
 }
 

@@ -87,7 +87,7 @@
   {#if !permissionUnknown}
     <div class="perm-row">
       {#if permissionGranted}
-        <span class="perm-ok">Notifications enabled ✓</span>
+        <span class="perm-ok">Notifications enabled</span>
       {:else}
         <span class="perm-muted">Notifications are blocked on this device.</span>
         <button
@@ -125,7 +125,7 @@
     </button>
   </div>
   {#if prefsSaved}
-    <p class="prefs-saved">Preferences saved ✓</p>
+    <p class="prefs-saved">Preferences saved</p>
   {/if}
 </div>
 
@@ -247,6 +247,17 @@
     .switch-row input,
     .switch-row input::after {
       transition: none;
+    }
+  }
+
+  /* Touch: both rows are <label>s, so a 44px row makes the whole width the
+     target instead of just the 51x31 switch and the 40px-tall days field.
+     Deliberately the labels and not the inputs: an <input> is content-box, so
+     `min-height` there would add to its padding and visibly fatten the field. */
+  @media (pointer: coarse) {
+    .switch-row,
+    .field-label {
+      min-height: 44px;
     }
   }
 </style>

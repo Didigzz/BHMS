@@ -4,6 +4,8 @@
   import { phpPeso } from "$lib/format";
   import { effectiveOccupancy, pct } from "$lib/rooms";
   import type { Room, RoomTenantChip } from "./types";
+  import Icon from "$lib/components/Icon.svelte";
+  import CalendarCheck from "@lucide/svelte/icons/calendar-check";
 
   let {
     room,
@@ -139,7 +141,7 @@
 
     {#if room.has_whole_hold === 1 && room.whole_hold_name}
       <p class="reserved-line">
-        📅 Reserved — <strong>{room.whole_hold_name}</strong>
+        <span class="reserved-icon"><Icon icon={CalendarCheck} size={16} /></span>Reserved — <strong>{room.whole_hold_name}</strong>
       </p>
     {/if}
 
@@ -269,6 +271,15 @@
   .menu-trigger:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+  }
+
+  /* Touch: the count is the only route to Edit / Manage beds / Manage tenants /
+     Delete, so the 32px circle has to grow to a full-size target. */
+  @media (pointer: coarse) {
+    .menu-trigger {
+      width: 44px;
+      height: 44px;
+    }
   }
 
   /* ---- anchored dropdown ---- */
@@ -446,6 +457,12 @@
   }
   .room-main:hover .view-hint {
     color: var(--accent);
+  }
+
+  .reserved-icon {
+    display: inline-flex;
+    margin-right: 6px;
+    vertical-align: -0.15em;
   }
 
   @media (prefers-reduced-motion: reduce) {

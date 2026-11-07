@@ -19,6 +19,7 @@
     type SalesReportRaw,
   } from "$lib/sales-report";
   import { exportSalesReportPdf, generateSalesReportPdf } from "$lib/pdf-export";
+  import { getPlatformCapabilities, type PlatformCapabilities } from "$lib/platform";
 
   // "As of" date for the period (stable for this page session).
   const today = todayIso();
@@ -90,6 +91,15 @@
   // ----- export -----
   let exporting = $state(false);
   let pdfError: string | null = $state(null);
+
+  /**
+   * Whether this build can put the PDF anywhere. Asked before the button is
+   * drawn so a platform without a file writer explains itself, instead of
+   * rendering a whole report and failing on the very last step.
+   */
+  let caps = $state<PlatformCapabilities | null>(null);
+  getPlatformCapabilities().then((c) => (caps = c));
+  const canExport = $derived(caps === null || caps.saveToDevice);
 
   async function exportPdf() {
     if (exporting || !report) return;
@@ -250,9 +260,17 @@
       <p class="form-error">{pdfError}</p>
     {/if}
 
-    <button type="button" class="btn btn-primary export-btn" onclick={exportPdf} disabled={exporting}>
+    <button
+      type="button"
+      class="btn btn-primary export-btn"
+      onclick={exportPdf}
+      disabled={exporting || !canExport}
+    >
       {exporting ? "Generating…" : "Download PDF"}
     </button>
+    {#if caps && !caps.saveToDevice && caps.unavailableReason}
+      <p class="muted">{caps.unavailableReason}</p>
+    {/if}
   {/if}
 </main>
 
@@ -302,6 +320,15 @@
   .picker-btn:disabled {
     opacity: 0.35;
     cursor: default;
+  }
+
+  /* Touch: 40px is close but still under the minimum, and these arrows are the
+     only way to step the report period. */
+  @media (pointer: coarse) {
+    .picker-btn {
+      width: 44px;
+      height: 44px;
+    }
   }
 
   .picker-label {

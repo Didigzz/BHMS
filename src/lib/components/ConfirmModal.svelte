@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, type Snippet } from "svelte";
   import { modalMaterial } from "$lib/motion";
   import { pushOverlay } from "$lib/back-stack";
 
@@ -24,7 +24,7 @@
     title: string;
     message: string;
     subtitle?: string;
-    note?: string;
+    note?: string | Snippet;
     confirmLabel?: string;
     busyLabel?: string;
     danger?: boolean;
@@ -66,7 +66,11 @@
     {/if}
     <p class="confirm-text">{message}</p>
     {#if note}
-      <p class="note">{note}</p>
+      {#if typeof note === "string"}
+        <p class="note">{note}</p>
+      {:else}
+        <p class="note">{@render note()}</p>
+      {/if}
     {/if}
     <div class="form-actions">
       <button type="button" class="btn" onclick={close} disabled={busy}>Cancel</button>

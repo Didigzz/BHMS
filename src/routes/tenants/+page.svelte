@@ -25,6 +25,7 @@
   import PaymentHistoryModal from "./PaymentHistoryModal.svelte";
   import ReceiptModal from "./ReceiptModal.svelte";
   import TenantCard from "./TenantCard.svelte";
+  import { countAmenityBillsForTenant } from "$lib/amenity-actions";
   import TenantDetailModal from "./TenantDetailModal.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
   import type { PaymentRecord, Room, Tenant, TenantFormState } from "./types";
@@ -386,8 +387,27 @@
     }
   }
 
-  /** Open the in-app confirm for permanent deletion. */
-  function permanentlyDelete(t: Tenant) {
+  /**
+   * Open the in-app confirm for permanent deletion. A tenant who appears on any
+   * amenity bill is blocked here with an explanation (amenity-billing-spec.md
+   * §9.4) — history keeps its subject, and the landlord is told why instead of
+   * meeting a raw foreign-key error.
+   */
+  async function permanentlyDelete(t: Tenant) {
+    try {
+      const db = await getDb();
+      const bills = await countAmenityBillsForTenant(db, t.id);
+      if (bills > 0) {
+        pushToast(
+          `${t.name} has ${bills} amenity bill${bills === 1 ? "" : "s"} — cancel them or keep the tenant.`,
+          "error",
+        );
+        return;
+      }
+    } catch (e) {
+      reportError(`Failed to check amenity bills: ${String(e)}`);
+      return;
+    }
     pendingDelete = t;
   }
 
@@ -689,6 +709,19 @@
     outline-offset: 2px;
   }
 
+  /* Touch: a 20px "x" inside the filter chip. The chip's own text is not
+     interactive, so the larger hit area steals nothing from it. */
+  @media (pointer: coarse) {
+    .room-filter-clear {
+      position: relative;
+    }
+    .room-filter-clear::before {
+      content: "";
+      position: absolute;
+      inset: -12px;
+    }
+  }
+
   /* ---- search ---- */
   .search-wrap {
     margin-bottom: 14px;
@@ -700,7 +733,8 @@
     border-radius: 10px;
     border: 1px solid var(--separator);
     padding: 10px 14px;
-    font-size: 0.95rem;
+    /* 1rem (16px) — anything smaller makes iOS zoom the page on focus. */
+    font-size: 1rem;
     font-family: inherit;
     color: var(--label);
     background: var(--card);

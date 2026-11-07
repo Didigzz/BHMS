@@ -5,6 +5,10 @@
   import { effectiveOccupancy, isRoomFull, roomUnavailable } from "$lib/rooms";
   import { validateTenantForm } from "$lib/tenant-form";
   import { pushOverlay } from "$lib/back-stack";
+  import Icon from "$lib/components/Icon.svelte";
+  import CircleAlert from "@lucide/svelte/icons/circle-alert";
+  import BedDouble from "@lucide/svelte/icons/bed-double";
+  import HandCoins from "@lucide/svelte/icons/hand-coins";
   import type { Room, Tenant, TenantFormState } from "./types";
 
   let {
@@ -336,11 +340,11 @@
         {#if form.boarding}
           <span>Backfilling — room checks are skipped for already-boarding tenants. Available beds in {sel.room_number}: {sel.capacity - effectiveOccupancy(sel.occupied_beds, sel.held_beds)}</span>
         {:else if sel.maintenance === 1}
-          <span class="full">⛔ {sel.room_number} is under maintenance — no tenants can be added.</span>
+          <span class="full"><span class="lead-icon"><Icon icon={CircleAlert} size={16} /></span>{sel.room_number} is under maintenance — no tenants can be added.</span>
         {:else if sel.whole_reservations > 0}
-          <span class="full">⛔ {sel.room_number} is held (whole room reserved).</span>
+          <span class="full"><span class="lead-icon"><Icon icon={CircleAlert} size={16} /></span>{sel.room_number} is held (whole room reserved).</span>
         {:else if isRoomFull(sel.occupied_beds, sel.held_beds, sel.capacity)}
-          <span class="full">⛔ {sel.room_number} is full — no more tenants can be added.</span>
+          <span class="full"><span class="lead-icon"><Icon icon={CircleAlert} size={16} /></span>{sel.room_number} is full — no more tenants can be added.</span>
         {:else}
           <span>Available beds in {sel.room_number}: {sel.capacity - effectiveOccupancy(sel.occupied_beds, sel.held_beds)}</span>
         {/if}
@@ -352,7 +356,7 @@
         Beds occupied
         <input type="number" min="1" step="1" placeholder="e.g. 1" bind:value={form.beds_occupied} />
       </label>
-      <p class="held-hint">🛏️ Set how many beds this tenant occupies (whole number of at least 1).</p>
+      <p class="held-hint"><span class="lead-icon"><Icon icon={BedDouble} size={16} /></span>Set how many beds this tenant occupies (whole number of at least 1).</p>
     {/if}
 
     <label>
@@ -391,14 +395,14 @@
       Deposit (₱, optional)
       <input type="number" min="0" step="0.01" placeholder="e.g. 2000" bind:value={form.deposit_amount} />
     </label>
-    <p class="held-hint">💰 Held as balance — applied to months only when you apply it. Refundable per Settings.</p>
+    <p class="held-hint"><span class="lead-icon"><Icon icon={HandCoins} size={16} /></span>Held as balance — applied to months only when you apply it. Refundable per Settings.</p>
 
     <label>
       Advance payment (₱, held, applied first)
       <input type="number" min="0" step="0.01" placeholder="e.g. 600" bind:value={form.advance_amount} />
     </label>
     <p class="held-hint">
-      💰 Held as balance — used before the deposit when you apply it.
+      <span class="lead-icon"><Icon icon={HandCoins} size={16} /></span>Held as balance — used before the deposit when you apply it.
       {#if advanceMonthsHint} {advanceMonthsHint}. {/if}
       {#if form.id !== null}
         Shows the remaining balance — editing corrects it.
@@ -562,6 +566,27 @@
     border-color: var(--accent);
   }
 
+  @media (pointer: coarse) {
+    /* The row is a <label>, so a 44px row makes its whole width a target
+       instead of just the 44x27 switch at the end of it. */
+    .switch-row {
+      min-height: 44px;
+    }
+
+    /* "?" is a 22px circle between the card edge and the label. Grow the
+       tappable box to 44px without moving the circle or the row, accepting that
+       ~11px of the label's left edge now belongs to the button — the label is
+       still tappable across the rest of its width. */
+    .help-btn {
+      position: relative;
+    }
+    .help-btn::before {
+      content: "";
+      position: absolute;
+      inset: -11px;
+    }
+  }
+
   .help-tip {
     position: absolute;
     top: calc(100% - 2px);
@@ -587,6 +612,12 @@
   .room-hint .full {
     color: var(--red-deep);
     font-weight: 700;
+  }
+
+  .lead-icon {
+    display: inline-flex;
+    margin-right: 6px;
+    vertical-align: -0.15em;
   }
 
   .due-hint {

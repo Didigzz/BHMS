@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getDb } from "$lib/db";
-  import { getAmenityBills, getBillWithDetails, cancelAmenityBill, setAmenityPaymentStatus } from "$lib/amenity-actions";
+  import { getAmenityBills, getBillWithDetails, cancelAmenityBill, setAmenityPaymentStatus, getPaidTenantNames } from "$lib/amenity-actions";
   import type { AmenityBillRow } from "$lib/amenity-actions";
   import { phpPesoPrecise, formatDate } from "$lib/format";
   import { pushToast } from "$lib/toast.svelte";
@@ -18,6 +18,8 @@
   let editingBill: AmenityBillRow | null = $state(null);
   let detailData: { bill: AmenityBillRow; tenants: any[]; rooms: any[] } | null = $state(null);
   let pendingCancel: AmenityBillRow | null = $state(null);
+  /** Tenants already marked Paid on the bill being cancelled — named in the confirm (spec §11). */
+  let paidOnCancel: string[] = $state([]);
 
   let billDetailsCache: Map<number, any> = $state(new Map());
 
@@ -61,6 +63,16 @@
     if (d) detailData = d as any;
   }
 
+  async function requestCancel(bill: AmenityBillRow) {
+    try {
+      const db = await getDb();
+      paidOnCancel = await getPaidTenantNames(db, bill.id);
+    } catch {
+      paidOnCancel = [];
+    }
+    pendingCancel = bill;
+  }
+
   async function confirmCancel() {
     if (!pendingCancel) return;
     const db = await getDb();
@@ -74,23 +86,34 @@
     }
   }
 
+  /** Flip the badge in place: the cached card list and an open detail modal. */
+  function applyStatusLocally(billId: number, billTenantId: number, status: string) {
+    const cached = billDetailsCache.get(billId);
+    if (cached) {
+      const row = cached.tenants.find((x: any) => x.id === billTenantId);
+      if (row) row.payment_status = status;
+      billDetailsCache = new Map(billDetailsCache);
+    }
+    if (detailData && detailData.bill.id === billId) {
+      const row = detailData.tenants.find((x: any) => x.id === billTenantId);
+      if (row) row.payment_status = status;
+      detailData = { ...detailData };
+    }
+  }
+
+  /**
+   * Paid/Unpaid is optimistic: the badge flips the instant it is tapped and
+   * rolls back if the write fails, so the tap never feels like it waited on
+   * the database.
+   */
   async function toggleStatus(billTenantId: number, current: string, billId: number) {
     const next = current === "Paid" ? "Unpaid" : "Paid";
+    applyStatusLocally(billId, billTenantId, next);
     const db = await getDb();
     const res = await setAmenityPaymentStatus(db, billTenantId, next);
-    if (res.error) pushToast(res.error, "error");
-    else {
-      const d = billDetailsCache.get(billId);
-      if (d) {
-        const t = d.tenants.find((x: any) => x.id === billTenantId);
-        if (t) t.payment_status = next;
-        billDetailsCache = new Map(billDetailsCache);
-        if (detailData && detailData.bill.id === billId) {
-          const td = detailData.tenants.find((x: any) => x.id === billTenantId);
-          if (td) td.payment_status = next;
-          detailData = { ...detailData };
-        }
-      }
+    if (res.error) {
+      applyStatusLocally(billId, billTenantId, current);
+      pushToast(res.error, "error");
     }
   }
 
@@ -129,7 +152,14 @@
   {/if}
 
   {#if pendingCancel}
-    <ConfirmModal title="Cancel Amenity Bill" message={`Cancel ${pendingCancel.amenity_name} — ${phpPesoPrecise(pendingCancel.total_amount)}? This marks it as Cancelled, keeps it in history, and removes its charges from Amenity Balances.`} confirmLabel="Cancel Bill" danger onConfirm={confirmCancel} onClose={() => pendingCancel = null} />
+    <ConfirmModal
+      title="Cancel Amenity Bill"
+      message={`Cancel ${pendingCancel.amenity_name} — ${phpPesoPrecise(pendingCancel.total_amount)}? This marks it as Cancelled, keeps it in history, and removes its charges from Amenity Balances.${paidOnCancel.length > 0 ? ` Already marked Paid: ${paidOnCancel.join(", ")} — their settled charges are reversed too.` : ""}`}
+      confirmLabel="Cancel Bill"
+      danger
+      onConfirm={confirmCancel}
+      onClose={() => { pendingCancel = null; paidOnCancel = []; }}
+    />
   {/if}
 
   {#if loading}
@@ -146,7 +176,7 @@
         <li class="card bill-card" class:cancelled={bill.status === "cancelled"}>
           <div class="bill-head">
             <div>
-              <strong>{bill.amenity_name}</strong> <span class="muted">— {bill.amenity_type}</span>
+              <strong>{bill.amenity_name}</strong>
               {#if bill.status === "cancelled"}<span class="badge badge-cancelled">Cancelled</span>{/if}
             </div>
             <span class="badge badge-method">{methodLabel(bill)}</span>
@@ -172,7 +202,7 @@
             <button class="btn btn-small" onclick={() => openDetails(bill)}>View Details</button>
             {#if bill.status === "active"}
               <button class="btn btn-small" onclick={() => openEdit(bill)}>Edit</button>
-              <button class="btn btn-small btn-danger" onclick={() => pendingCancel = bill}>Cancel Bill</button>
+              <button class="btn btn-small btn-danger" onclick={() => requestCancel(bill)}>Cancel Bill</button>
             {/if}
           </div>
         </li>
@@ -186,14 +216,22 @@
   .bill-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 12px; }
   .bill-card.cancelled { opacity: 0.7; background: var(--gray-soft); }
   .bill-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .badge-method { background: var(--accent-soft); color: var(--accent-deep); padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; }
+  .badge-method { background: var(--accent-soft); color: var(--accent-deep); padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.01em; }
   .badge-cancelled { background: var(--gray-soft); color: var(--gray-deep); padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
   .badge-amenity { background: var(--fill); color: var(--label); padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; }
   .badge-inactive { background: var(--gray-soft); color: var(--gray-deep); padding: 2px 8px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; }
   .tenant-chips { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-  .chip { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px; border: 1px solid var(--separator); border-radius: 8px; }
+  .chip { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px; border: 1px solid var(--separator); border-radius: 8px; }
+  .badge-inactive, .badge-cancelled { letter-spacing: 0.01em; }
   .chip.excluded { background: var(--gray-soft); color: var(--gray-deep); }
-  .status-toggle { padding: 2px 8px; font-size: 0.7rem; border-radius: 999px; background: var(--amber-soft); color: var(--amber-deep); border: none; }
+  .status-toggle { min-height: 1.75rem; padding: 4px 10px; font-size: 0.7rem; letter-spacing: 0.01em; border-radius: 999px; background: var(--amber-soft); color: var(--amber-deep); border: none; }
   .status-toggle.paid { background: var(--green-soft); color: var(--green-deep); }
   .bill-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+  /* Touch: this pill is the primary action on the page — marking a tenant's
+     amenity slice Paid/Unpaid — and it was 28px tall. Height only; the label
+     keeps the design's width. */
+  @media (pointer: coarse) {
+    .status-toggle { min-height: 44px; }
+  }
 </style>

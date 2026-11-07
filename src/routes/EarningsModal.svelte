@@ -87,7 +87,10 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    /* dvh so the list measures the visible viewport on a phone, where the
+       system bars take part of it. */
     max-height: 46vh;
+    max-height: 46dvh;
     overflow-y: auto;
   }
 
