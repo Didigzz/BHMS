@@ -327,13 +327,13 @@
 
   /* ---- occupancy ---- */
   .room-meta {
-    margin: 10px 0 0;
+    margin: var(--space-3) 0 0;
     color: var(--label-2);
     font-size: 0.9rem;
   }
 
   .room-meta.full {
-    color: var(--red-deep);
+    color: var(--label-2);
     font-weight: 700;
   }
   .room-meta.partial {
@@ -361,7 +361,7 @@
   /* ---- boarder chips (payment-status tinted, like the dashboard) ---- */
   .room-chips {
     list-style: none;
-    margin: 10px 0 0;
+    margin: var(--space-3) 0 0;
     padding: 0;
     display: flex;
     flex-wrap: wrap;
@@ -401,7 +401,7 @@
   }
 
   .no-tenants {
-    margin: 10px 0 0;
+    margin: var(--space-3) 0 0;
     color: var(--label-3);
     font-size: 0.85rem;
     font-style: italic;
@@ -415,7 +415,7 @@
   }
 
   .held-line {
-    margin: 6px 0 0;
+    margin: var(--space-2) 0 0;
     color: var(--amber-deep);
     font-weight: 600;
     font-size: 0.85rem;

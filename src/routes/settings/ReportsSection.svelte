@@ -108,7 +108,7 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    margin-top: 14px;
+    margin-top: var(--space-3);
     font-weight: 600;
     font-size: 0.85rem;
     color: var(--label-2);
@@ -137,7 +137,7 @@
   }
 
   .capacity-hint {
-    margin: 6px 0 0;
+    margin: var(--space-2) 0 0;
     font-size: 0.8rem;
     color: var(--label-3);
   }

@@ -145,7 +145,7 @@
   .receipt-panel {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: var(--space-3);
   }
 
   /* ---- success banner (shown only right after recording) ---- */
@@ -178,7 +178,7 @@
 
   .receipt-head {
     text-align: center;
-    margin-bottom: 10px;
+    margin-bottom: var(--space-3);
   }
 
   .receipt-house {
@@ -191,12 +191,12 @@
     font-size: 0.72rem;
     letter-spacing: 0.18em;
     color: #555555;
-    margin-top: 2px;
+    margin-top: var(--space-1);
   }
 
   .r-divider {
     border-top: 1px dashed #b9b9b9;
-    margin: 10px 0;
+    margin: var(--space-3) 0;
   }
 
   .r-row {

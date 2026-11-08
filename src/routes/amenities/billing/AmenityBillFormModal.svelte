@@ -10,6 +10,7 @@
     calcPerRoomSplit,
     calcConnectedSplit,
     calculateMeterTotal,
+    parseOptionalNumber,
     validateBill,
     validateExclusionReason,
     round2,
@@ -81,9 +82,16 @@
   let notes = $state(editing?.notes ?? "");
   let division_mode = $state<string>(editing?.division_mode ?? "auto");
 
-  let meter_start = $state<string>(editing?.meter_start != null ? String(editing.meter_start) : "");
-  let meter_end = $state<string>(editing?.meter_end != null ? String(editing.meter_end) : "");
-  let price_per_unit = $state<string>(
+  // `bind:value` on a number input writes `null` when the field is emptied and
+  // a number on every keystroke, so the state is wider than the display string
+  // it starts as — every read goes through parseOptionalNumber.
+  let meter_start = $state<string | number | null>(
+    editing?.meter_start != null ? String(editing.meter_start) : "",
+  );
+  let meter_end = $state<string | number | null>(
+    editing?.meter_end != null ? String(editing.meter_end) : "",
+  );
+  let price_per_unit = $state<string | number | null>(
     editing?.price_per_unit != null ? String(editing.price_per_unit) : "",
   );
 
@@ -257,12 +265,13 @@
     round2([...computedShares.values()].reduce((sum, value) => round2(sum + value), 0)),
   );
 
-  let meterInfo = $derived.by(() => {
-    const s = meter_start.trim() === "" ? null : Number(meter_start);
-    const e = meter_end.trim() === "" ? null : Number(meter_end);
-    const p = price_per_unit.trim() === "" ? null : Number(price_per_unit);
-    return calculateMeterTotal(s, e, p);
-  });
+  let meterInfo = $derived.by(() =>
+    calculateMeterTotal(
+      parseOptionalNumber(meter_start),
+      parseOptionalNumber(meter_end),
+      parseOptionalNumber(price_per_unit),
+    ),
+  );
 
   /** The heading over the picker, which changes shape with the billing method. */
   let pickerTitle = $derived(
@@ -343,6 +352,17 @@
     error = null;
     duplicateWarning = null;
     overlapWarning = [];
+    try {
+      await runSave();
+    } catch (e) {
+      // An unexpected throw (a field state that is not a string, say) must not
+      // leave the sheet open with no feedback — show it inline.
+      error = String(e);
+      saving = false;
+    }
+  }
+
+  async function runSave() {
     const total = Number(total_amount);
 
     for (const [, reason] of excludedMap) {
@@ -414,9 +434,9 @@
         tenantShares: computedShares,
         excluded: excludedMap,
         roomIds,
-        meter_start: meter_start.trim() === "" ? null : Number(meter_start),
-        meter_end: meter_end.trim() === "" ? null : Number(meter_end),
-        price_per_unit: price_per_unit.trim() === "" ? null : Number(price_per_unit),
+        meter_start: parseOptionalNumber(meter_start),
+        meter_end: parseOptionalNumber(meter_end),
+        price_per_unit: parseOptionalNumber(price_per_unit),
       };
 
       const result = editing
@@ -875,7 +895,7 @@
     margin-bottom: 16px;
   }
   .field.tight {
-    margin-bottom: 10px;
+    margin-bottom: var(--space-3);
   }
   .field-label {
     font-size: 0.82rem;
@@ -952,7 +972,7 @@
     margin-bottom: 16px;
   }
   .block-title {
-    margin: 0 0 10px;
+    margin: 0 0 var(--space-3);
     font-size: 0.82rem;
     font-weight: 600;
   }
@@ -971,7 +991,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    margin-bottom: 10px;
+    margin-bottom: var(--space-3);
   }
   .section-head h3 {
     margin: 0;
@@ -1043,8 +1063,8 @@
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
-    margin-top: 11px;
-    padding-top: 11px;
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--separator);
   }
   .inline-check {
@@ -1094,7 +1114,7 @@
     letter-spacing: 0.01em;
   }
   .pooled-note {
-    margin: 0 0 10px;
+    margin: 0 0 var(--space-3);
     font-size: 0.82rem;
   }
 

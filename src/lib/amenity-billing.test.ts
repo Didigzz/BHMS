@@ -9,6 +9,7 @@ import {
   calculateMeterTotal,
   isValidBillingPeriod,
   normalizeBillingPeriod,
+  parseOptionalNumber,
   recalcRemaining,
   validateBill,
   validateBillingPeriod,
@@ -212,6 +213,25 @@ describe("meter", () => {
   it("rejects end < start and negative prices", () => {
     expect(calculateMeterTotal(150, 100, 5).error).toBe(AMENITY_MESSAGES.meterEnd);
     expect(calculateMeterTotal(100, 150, -5).error).toBe(AMENITY_MESSAGES.meterPrice);
+  });
+});
+
+describe("parseOptionalNumber", () => {
+  it("treats blank, null and unparsable values as not set", () => {
+    for (const raw of [null, undefined, "", "   ", "abc", NaN, Infinity, -Infinity]) {
+      expect(parseOptionalNumber(raw)).toBeNull();
+    }
+  });
+
+  it("keeps a real 0 and trims numeric text", () => {
+    expect(parseOptionalNumber("0")).toBe(0);
+    expect(parseOptionalNumber(0)).toBe(0);
+    expect(parseOptionalNumber(" 12 ")).toBe(12);
+  });
+
+  it("parses decimal and negative readings", () => {
+    expect(parseOptionalNumber("150.5")).toBe(150.5);
+    expect(parseOptionalNumber(-3)).toBe(-3);
   });
 });
 

@@ -3,6 +3,7 @@
   import BackupSection from "./BackupSection.svelte";
   import NotificationsSection from "./NotificationsSection.svelte";
   import HouseNameSection from "./HouseNameSection.svelte";
+  import BrandLogo from "$lib/components/BrandLogo.svelte";
   import DepositRefundSection from "./DepositRefundSection.svelte";
   import ReportsSection from "./ReportsSection.svelte";
 
@@ -35,7 +36,7 @@
 
   <div class="card">
     <h2 class="section-title">About</h2>
-    <p class="about-line"><strong>RentEase</strong></p>
+    <div class="about-brand"><BrandLogo size={44} tagline /></div>
     <p class="muted">Version 0.1.0</p>
     <p class="muted">
       Data stays on this phone — export a backup to keep it safe or move it to another phone.
@@ -46,13 +47,8 @@
 </main>
 
 <style>
-  .page-header {
-    margin-bottom: 20px;
-  }
-
-  .about-line {
-    margin: 0 0 4px;
-    font-size: 0.95rem;
+  .about-brand {
+    margin: var(--space-3) 0;
   }
 
   /* Description paragraphs inside the settings cards render at this size

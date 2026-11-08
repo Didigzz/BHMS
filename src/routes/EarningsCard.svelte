@@ -78,7 +78,7 @@
 
 <style>
   .earnings-card {
-    margin-bottom: 16px;
+    margin-bottom: var(--space-4);
   }
 
   .earnings-head {
@@ -116,8 +116,8 @@
   .earnings-stats {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-    margin-bottom: 12px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
   }
 
   .stat {
@@ -153,7 +153,7 @@
   }
 
   .earnings-note {
-    margin: 0 0 10px;
+    margin: 0 0 var(--space-3);
     font-size: 0.8rem;
     background: var(--accent-soft);
     color: var(--accent-deep);

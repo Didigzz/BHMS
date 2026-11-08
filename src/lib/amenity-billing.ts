@@ -264,6 +264,19 @@ export function normalizeBillingPeriod(input: string | null): string | null {
   return trimmed;
 }
 
+/**
+ * `bind:value` on `<input type="number">` writes `null` when the field is
+ * emptied and a number as soon as anything is typed, so a form field that
+ * starts life as a string can arrive here as either. Blank and unparsable
+ * both mean "not set"; a real 0 survives.
+ */
+export function parseOptionalNumber(raw: string | number | null | undefined): number | null {
+  const text = typeof raw === "string" ? raw.trim() : raw;
+  if (text == null || text === "") return null;
+  const value = typeof text === "number" ? text : Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
 export function validateBillingPeriod(input: string | null): string | null {
   const period = normalizeBillingPeriod(input);
   if (period == null) return null;

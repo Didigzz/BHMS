@@ -427,7 +427,7 @@
 </script>
 
 <main>
-  <header class="page-header">
+  <header class="page-header with-action">
     <div>
       <h1>Tenant Management</h1>
       <p class="subtitle">{activeTenants.length} tenant{activeTenants.length === 1 ? "" : "s"} in total</p>
@@ -607,7 +607,7 @@
         <p class="muted">{activeEmptyMessage}</p>
       </div>
     {:else}
-      <ul class="tenant-list">
+      <ul class="list-stack">
         {#each visibleActive as tenant (tenant.id)}
           <TenantCard
             tenant={tenant}
@@ -632,7 +632,7 @@
         <p class="muted">No tenants match “{searchQuery.trim()}”.</p>
       </div>
     {:else}
-      <ul class="tenant-list">
+      <ul class="list-stack">
         {#each visibleArchived as tenant (tenant.id)}
           <TenantCard
             tenant={tenant}
@@ -651,27 +651,9 @@
 </main>
 
 <style>
-  .page-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
-    padding-right: 44px;
-  }
-
-  .tenant-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
   /* ---- room filter chip (?room= param) ---- */
   .room-filter-row {
-    margin-bottom: 10px;
+    margin-bottom: var(--space-3);
   }
 
   .room-filter-chip {
@@ -724,7 +706,7 @@
 
   /* ---- search ---- */
   .search-wrap {
-    margin-bottom: 14px;
+    margin-bottom: var(--space-3);
   }
 
   .search-input {

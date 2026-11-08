@@ -17,7 +17,8 @@
         // Storage unavailable — the light markup default stands.
       }
     </script>
-    <link rel="icon" href="%sveltekit.assets%/favicon.png" />
+    <link rel="icon" type="image/svg+xml" href="%sveltekit.assets%/rentease-icon.svg" />
+    <link rel="alternate icon" type="image/png" href="%sveltekit.assets%/favicon.png" />
     <!-- Zoom is locked: this is a phone app, not a web page. `user-scalable=no`
          / `maximum-scale` cover most Android WebViews; src/app.css adds
          `touch-action` for the engines that ignore them. -->
@@ -25,7 +26,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover"
     />
-    <title>Tauri + SvelteKit + Typescript App</title>
+    <title>RentEase</title>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

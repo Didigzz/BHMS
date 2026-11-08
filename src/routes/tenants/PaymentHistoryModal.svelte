@@ -232,7 +232,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: var(--space-3);
     background: var(--accent-soft);
     border: 1px solid rgba(10, 132, 255, 0.25);
     border-radius: 10px;

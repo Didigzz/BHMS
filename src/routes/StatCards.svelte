@@ -28,8 +28,8 @@
 <style>
   .stats {
     display: flex;
-    gap: 12px;
-    margin-bottom: 20px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
   }
 
   .stat-card {

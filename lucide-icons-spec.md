@@ -57,7 +57,7 @@ delivered through one shared `Icon` wrapper. Nothing is added, removed, or rearr
 | 13 | `ConfirmModal` note | **Widen `note` to `string \| Snippet`** so a note can carry an inline icon; existing string callers keep working. |
 | 14 | Accessibility | **Every icon is decorative**: `aria-hidden="true"`, meaning comes from adjacent text or the control's `aria-label`. Icons never become the only accessible name. |
 | 15 | Net-new icons | **Replacement only.** No icons added to page headers, stat cards, segmented controls, or text-only buttons. |
-| 16 | Popover tiles | **Keep the 30px `#f2f2f7` tile** in the `+` popover; monochrome icons sit centered on it. |
+| 16 | Popover tiles | ~~**Keep the 30px `#f2f2f7` tile** in the `+` popover; monochrome icons sit centered on it.~~ **Superseded by `popover-icons-spec.md`**: the plate was drawn for color emoji and reads as a white block behind Lucide strokes. The 30px *slot* stays; the surface is gone. |
 | 17 | Empty state | Room-sheet `🛏️` becomes a **24px `BedDouble` in `--label-3`** (part of the standard scale), not a 40–48px hero glyph. |
 | 18 | Verification | **Static checks + a phone-size browser preview** of dock, popover, tenant card, settings, toasts, and the room sheet. No Android device pass required. |
 | 19 | Native icons | **Out of scope:** Tauri app icons, tray icon, and favicon are untouched. |
@@ -187,7 +187,7 @@ Call site:
 | **R14** | Icons inherit color via `currentColor`. Existing per-icon colors are preserved exactly: reservation phone `var(--red)`, bed `#af52de`, calendar `var(--label-3)`, money `var(--amber)`, clock `var(--accent)`; tenant danger `var(--red-deep)`, refund `var(--green-deep)`. |
 | **R15** | No new color tokens are introduced. The hard-coded purple `#af52de` stays because Decision 11 keeps today's reservation palette (the existing comment documenting it as the one fixed-color exception remains accurate). |
 | **R16** | Wrapper spans that existed only to size an emoji (`.tab-icon`, `.pop-icon`, `.gear-icon`, `.mini-icon`, `.toast-icon`, `.empty-emoji`) lose their `font-size`/`line-height`/`font-weight` rules and become layout-only containers. |
-| **R17** | The `+` popover keeps its 30px `#f2f2f7` tile (Decision 16); the 16px icon is centered in it. |
+| **R17** | *(Superseded by `popover-icons-spec.md`.)* The `+` popover keeps its 30px slot — the centering container survives **without** the `#f2f2f7` chip. |
 | **R18** | Active/inactive states still work through the existing classes: `.tab.active` / `.pop-item.active` recolor the icon, `.tab.active .tab-icon` scale, `.gear:hover` rotation, `.mini.danger` red, `.mini.refund` green. The wrapper must not block these inherited colors or transforms. |
 
 ### 4.4 Inline and prose icons
@@ -293,7 +293,7 @@ Sizes: **16** = inline/meta; **20** = nav/actions; **24** = empty state.
 |---|------|-------|---------|----------|
 | Δ1 | `src/routes/+layout.svelte` | 26–30 | `NAV` icons are emoji strings | component references per §5.1 (R10) |
 | Δ2 | `src/routes/+layout.svelte` | 184 | `<span class="tab-icon">{tab.icon}</span>` | `<span class="tab-icon"><Icon icon={tab.icon} size={20} /></span>` |
-| Δ3 | `src/routes/+layout.svelte` | 209 | `<span class="pop-icon">{item.icon}</span>` | `<span class="pop-icon"><Icon icon={item.icon} size={16} /></span>` (tile kept) |
+| Δ3 | `src/routes/+layout.svelte` | 209 | `<span class="pop-icon">{item.icon}</span>` | `<span class="pop-icon"><Icon icon={item.icon} size={16} /></span>` (tile removed — see `popover-icons-spec.md`) |
 | Δ4 | `src/routes/+layout.svelte` | 232 | `<span class="gear-icon">⚙</span>` | `<span class="gear-icon"><Icon icon={Settings} size={20} /></span>` |
 | Δ5 | `src/routes/+layout.svelte` | 379–391, 533–545, 587–591 | `.tab-icon` / `.pop-icon` / `.gear-icon` font sizing | remove `font-size`/`line-height`; keep layout only (R16) |
 | Δ6 | `src/routes/+page.svelte` | 166, 169 | `🔴 …` / `🟡 …` | `CircleAlert` / `Clock` at 16px with inherited pill color (R21) |
@@ -429,9 +429,9 @@ Run `npm run dev` and review at **390×844** (and once at desktop width, since t
 1. **Close buttons stay text while Settings ticks were dropped.** `✕` close buttons remain typographic (Decision 2),
    yet the `✓` success ticks were removed (Decision 12). Both are dingbats of similar weight. The interview chose
    each deliberately; revisit only if the preview shows the `✕` reading as an odd one-off.
-2. **Popover tiles with monochrome icons.** The 30px `#f2f2f7` tile was designed for color emoji. It was kept by
-   decision (16); if the preview looks like an empty gray chip behind a thin stroke, the follow-up is either
-   removing the tile or tinting it with `--accent-soft`.
+2. **Popover tiles with monochrome icons — *resolved*.** The 30px `#f2f2f7` tile was designed for color emoji. It was
+   kept by decision (16), and the predicted follow-up is exactly what happened: the plate read as a white block
+   behind the stroke and was removed in `popover-icons-spec.md` (Decision 2 there). The 30px slot remains.
 3. **Tenant mini icons grow 18 → 20px.** This is the intended unified scale, but it may add ~2px to the expanded
    "More options" band. Accept unless it clips the 44px touch rows.
 4. **Icon naming drift.** `ReceiptText`, `HandCoins`, `CircleX`, `Share2`, and `History` are the least stable names

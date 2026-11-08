@@ -166,7 +166,7 @@
 </script>
 
 <main>
-  <header class="page-header">
+  <header class="page-header with-action">
     <div>
       <h1>Reservations</h1>
       <p class="subtitle">
@@ -226,7 +226,7 @@
         <button class="btn btn-primary" onclick={openAdd}>+ Add Reservation</button>
       </div>
     {:else}
-      <ul class="res-list">
+      <ul class="list-stack">
         {#each activeReservations as res (res.id)}
           <ReservationCard
             reservation={res}
@@ -242,7 +242,7 @@
         <p class="muted">No reservation history yet.</p>
       </div>
     {:else}
-      <ul class="res-list">
+      <ul class="list-stack">
         {#each historyReservations as res (res.id)}
           <ReservationCard reservation={res} history />
         {/each}
@@ -252,24 +252,6 @@
 </main>
 
 <style>
-  .page-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
-    padding-right: 44px;
-  }
-
-  .res-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
   .note-icon {
     display: inline-flex;
     margin-right: 6px;

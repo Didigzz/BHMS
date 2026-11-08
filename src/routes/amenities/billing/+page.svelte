@@ -125,7 +125,7 @@
 </script>
 
 <main>
-  <header class="page-header">
+  <header class="page-header with-action">
     <div>
       <h1>Amenity Billing</h1>
       <p class="subtitle">{filteredBills.length} bill{filteredBills.length === 1 ? "" : "s"} shown</p>
@@ -170,7 +170,7 @@
       <button class="btn btn-primary" onclick={openAdd}>+ Add New Bill</button>
     </div>
   {:else}
-    <ul class="bill-list">
+    <ul class="list-stack">
       {#each filteredBills as bill (bill.id)}
         {@const details = billDetailsCache.get(bill.id)}
         <li class="card bill-card" class:cancelled={bill.status === "cancelled"}>
@@ -212,21 +212,19 @@
 </main>
 
 <style>
-  .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; padding-right: 44px; }
-  .bill-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 12px; }
   .bill-card.cancelled { opacity: 0.7; background: var(--gray-soft); }
   .bill-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
   .badge-method { background: var(--accent-soft); color: var(--accent-deep); padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.01em; }
   .badge-cancelled { background: var(--gray-soft); color: var(--gray-deep); padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
   .badge-amenity { background: var(--fill); color: var(--label); padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; }
   .badge-inactive { background: var(--gray-soft); color: var(--gray-deep); padding: 2px 8px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; }
-  .tenant-chips { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .tenant-chips { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
   .chip { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px; border: 1px solid var(--separator); border-radius: 8px; }
   .badge-inactive, .badge-cancelled { letter-spacing: 0.01em; }
   .chip.excluded { background: var(--gray-soft); color: var(--gray-deep); }
   .status-toggle { min-height: 1.75rem; padding: 4px 10px; font-size: 0.7rem; letter-spacing: 0.01em; border-radius: 999px; background: var(--amber-soft); color: var(--amber-deep); border: none; }
   .status-toggle.paid { background: var(--green-soft); color: var(--green-deep); }
-  .bill-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .bill-actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); flex-wrap: wrap; }
 
   /* Touch: this pill is the primary action on the page — marking a tenant's
      amenity slice Paid/Unpaid — and it was 28px tall. Height only; the label

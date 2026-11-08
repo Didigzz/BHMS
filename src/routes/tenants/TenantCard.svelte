@@ -231,7 +231,7 @@
     gap: 6px;
     width: 100%;
     min-height: 44px;
-    margin-top: 6px;
+    margin-top: var(--space-2);
     padding: 4px 8px;
     border: none;
     border-radius: 8px;

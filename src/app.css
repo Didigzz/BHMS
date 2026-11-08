@@ -18,6 +18,25 @@
 
 /* ---- base theme ---- */
 :root {
+  /* ---- vertical rhythm ---- */
+  /* One scale for the whole app, stated as a rule:
+
+       --space-1   4px   hairline gaps (label → value)
+       --space-2   8px   rows inside one group (chips, note lines)
+       --space-3  12px   within a related group; between cards in a list
+       --space-4  16px   between page blocks (alert, filters, list, cards)
+       --space-5  20px   page header → first block
+
+     This governs *vertical block rhythm* only. Left off the scale on purpose:
+     horizontal row gaps (icon → label, chip rows), padding inside controls
+     (the 44px touch targets are built from those numbers), sub-4px label
+     pairings, optical pull-ups, and chart internals. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+
   /* iOS system palette — light */
   --bg: #f2f2f7;                       /* systemGroupedBackground */
   --card: #ffffff;
@@ -309,12 +328,42 @@ h1 {
   font-size: 0.9rem;
 }
 
+/* ---- page header (every route's top block) ---- */
+/* One header shape for the whole app: the title block, plus the route's single
+   primary action pinned to the right edge when there is one.
+
+   The per-page copies of this rule carried `padding-right: 44px`, reserving
+   room for a top-right Settings gear that no longer exists (Settings lives in
+   the + menu). All it did was hold every Add button 60px off the column edge,
+   so the header never lined up with the cards underneath it. */
+.page-header {
+  margin-bottom: var(--space-5);
+}
+
+.page-header.with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* The title block yields first: a long subtitle wraps instead of shoving the
+   action off the column, and the action label never breaks onto two lines. */
+.page-header.with-action > div {
+  min-width: 0;
+}
+
+.page-header.with-action > .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 /* ---- cards ---- */
 .card {
   background: var(--card);
   border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 16px;
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
   box-shadow: var(--shadow-1);
 }
 
@@ -322,22 +371,43 @@ h1 {
   text-align: center;
 }
 
-/* ---- status banners ---- */  .alert {
-    background: var(--red-soft);
-    color: var(--red-deep);
-    border: 1px solid rgba(215, 0, 21, 0.25);
-    border-radius: 10px;
-    padding: 10px 12px;
-    margin-bottom: 16px;
-  }
-  :root[data-theme="dark"] .alert {
+/* ---- card lists ---- */
+/* Every route's list of cards. 12px is the in-group rhythm (cards of the same
+   kind), while `.card`'s own 16px bottom margin stays for distinct sections
+   (Settings). Cards inside a stack drop that margin — keeping both spaced each
+   pair 28px apart, which is the gap every list used to show. */
+.list-stack {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.list-stack > .card {
+  margin-bottom: 0;
+}
+
+/* ---- status banners ---- */
+.alert {
+  background: var(--red-soft);
+  color: var(--red-deep);
+  border: 1px solid rgba(215, 0, 21, 0.25);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: var(--space-4);
+}
+
+:root[data-theme="dark"] .alert {
+  border-color: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .alert {
     border-color: transparent;
   }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) .alert {
-      border-color: transparent;
-    }
-  }
+}
 
 /* ---- status badges ---- */
 .badge {
@@ -376,7 +446,7 @@ h1 {
   background: var(--fill);
   border-radius: 10px;
   padding: 3px;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
 }
 
 .segmented button {
@@ -411,8 +481,8 @@ h1 {
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 16px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
 .chips button {
@@ -468,8 +538,8 @@ h1 {
 .form-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
 }
 
 /* ---- confirm/modal panel bits ---- */
@@ -523,7 +593,7 @@ h1 {
 
 /* ---- section titles (settings cards) ---- */
 .section-title {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
   font-size: 1.05rem;
 }
 

@@ -226,7 +226,7 @@
 </script>
 
 <main>
-  <header class="page-header">
+  <header class="page-header with-action">
     <div>
       <h1>Room Management</h1>
       <p class="subtitle">
@@ -297,7 +297,7 @@
       <p class="muted">No rooms match this filter.</p>
     </div>
   {:else}
-    <ul class="room-list">
+    <ul class="list-stack">
       {#each filteredRooms as room (room.id)}
         <RoomCard
           room={room}
@@ -315,15 +315,6 @@
 </main>
 
 <style>
-  .page-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
-    padding-right: 44px;
-  }
-
   /* Rooms renders its placeholder text slightly dimmer than the global .muted —
      light mode only (explicit or device-driven), so dark mode falls through
      to the global label-2. Guarded by the :root data-theme override. */
@@ -336,12 +327,4 @@
     }
   }
 
-  .room-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
 </style>

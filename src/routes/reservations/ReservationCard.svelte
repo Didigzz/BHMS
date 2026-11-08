@@ -188,7 +188,7 @@
   .divider {
     height: 1px;
     background: var(--separator);
-    margin: 10px 0;
+    margin: var(--space-3) 0;
   }
 
   /* ---- date rows: label left, bullet centered, date far right ---- */

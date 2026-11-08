@@ -11,6 +11,7 @@
   import { currentMonthKey, type EarningsPayment, type EarningsTenant } from "$lib/earnings";
   import type { DashboardRoom, TenantChip } from "./types";
   import Icon from "$lib/components/Icon.svelte";
+  import BrandLogo from "$lib/components/BrandLogo.svelte";
   import CircleAlert from "@lucide/svelte/icons/circle-alert";
   import Clock from "@lucide/svelte/icons/clock";
 
@@ -148,6 +149,7 @@
 
 <main>
   <header class="page-header">
+    <div class="brand-row"><BrandLogo size={32} /></div>
     <h1>Dashboard</h1>
     <p class="subtitle">At-a-glance overview of the boarding house</p>
   </header>
@@ -188,7 +190,7 @@
       <p class="muted">No rooms yet. Add your first room from the Rooms tab.</p>
     </div>
   {:else}
-    <ul class="room-list">
+    <ul class="list-stack">
       {#each rooms as room (room.id)}
         <DashboardRoomCard room={room} onView={openDetail} />
       {/each}
@@ -203,31 +205,17 @@
 </main>
 
 <style>
-  /* The dashboard's cards sit in the gap-based .room-list, so they don't
-     carry the global .card bottom margin. */
-  .card {
-    margin-bottom: 0;
-  }
-
-  .page-header {
-    margin-bottom: 20px;
-  }
-
-  .room-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  /* The app introduces itself here, then names the screen. */
+  .brand-row {
+    margin-bottom: var(--space-3);
   }
 
   /* ---- summary strip ---- */
   .summary-strip {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 14px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
   }
 
   .summary-item {
@@ -252,8 +240,8 @@
   .legend {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
-    margin: 0 0 20px 2px;
+    gap: var(--space-3);
+    margin: 0 0 var(--space-4) 2px;
     padding: 0;
     list-style: none;
     font-size: 0.78rem;

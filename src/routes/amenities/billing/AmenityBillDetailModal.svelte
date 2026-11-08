@@ -74,7 +74,7 @@
      above it now carries the system-bar insets. */
   .modal-card { background: var(--card); border-radius: 16px; padding: 20px; max-width: 560px; width: 100%; max-height: 90vh; max-height: 90dvh; overflow-y: auto; }
   .card { background: var(--fill); border: 1px solid var(--separator); border-radius: 10px; padding: 12px; margin: 12px 0; }
-  .tenant-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .tenant-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .tenant-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px; border: 1px solid var(--separator); border-radius: 8px; }
   .tenant-row.excluded { background: var(--gray-soft); color: var(--gray-deep); }
   .badge-inactive { background: var(--gray-soft); color: var(--gray-deep); padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; }

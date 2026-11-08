@@ -275,10 +275,6 @@
 </main>
 
 <style>
-  .page-header {
-    margin-bottom: 20px;
-  }
-
   .title-row {
     display: flex;
     align-items: center;
@@ -344,7 +340,7 @@
     align-items: flex-end;
     gap: 6px;
     height: 150px;
-    margin-top: 14px;
+    margin-top: var(--space-3);
     padding-top: 18px; /* room for the value labels above the bars */
   }
 

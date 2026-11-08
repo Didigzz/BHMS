@@ -27,12 +27,15 @@
    * The dock shows the first three — the ones reached constantly — in a
    * floating pill, so the bar stays three items wide however many sections the
    * app grows, and the selected pill slides between items instead of blinking.
-   * The remaining two sit behind the + button; Settings is its own gear.
+   * The remaining three sit behind the + button: Settings first, then
+   * Reservations and Amenities. Configuration is a rarer trip than either
+   * section, but it is still a destination rather than a floating control.
    */
   const NAV = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard, isActive: (p: string) => p === "/" },
     { href: "/tenants", label: "Tenants", icon: Users, isActive: (p: string) => p.startsWith("/tenants") },
     { href: "/rooms", label: "Rooms", icon: BedDouble, isActive: (p: string) => p.startsWith("/rooms") },
+    { href: "/settings", label: "Settings", icon: Settings, isActive: (p: string) => p.startsWith("/settings") },
     { href: "/reservations", label: "Reservations", icon: CalendarDays, isActive: (p: string) => p.startsWith("/reservations") },
     { href: "/amenities", label: "Amenities", icon: ReceiptText, isActive: (p: string) => p.startsWith("/amenities") },
   ];
@@ -172,7 +175,8 @@
      keep in sync — a maximized window renders the phone layout too. -->
 {#if isMac}
   <!-- The window's drag handle, now that the sidebar head is gone (see isMac).
-       Sits behind the gear (z-index 90), so the gear stays tappable. -->
+       It used to stop short of the Settings gear; with Settings in the + menu
+       the top-right corner is free again, so the strip runs edge to edge. -->
   <div class="titlebar-drag" data-tauri-drag-region aria-hidden="true"></div>
 {/if}
 
@@ -212,6 +216,15 @@
             role="menuitem"
             class="pop-item"
             class:active={pathname.startsWith(item.href)}
+            onclick={(event) => {
+              // Settings tapped while already in Settings would re-enter the
+              // route and jump the page to the top. Dismiss the menu and stay
+              // exactly where the user is.
+              if (item.href === "/settings" && pathname.startsWith("/settings")) {
+                event.preventDefault();
+                menuOpen = false;
+              }
+            }}
           >
             <span class="pop-icon" aria-hidden="true"><Icon icon={item.icon} size={16} /></span>
             <span class="pop-label">{item.label}</span>
@@ -235,9 +248,6 @@
   </div>
 </nav>
 
-<a href="/settings" class="gear" aria-label="Settings" class:active={pathname.startsWith("/settings")}>
-  <span class="gear-icon"><Icon icon={Settings} size={20} /></span>
-</a>
 {/if}
 
 <ToastHost />
@@ -292,15 +302,15 @@
   /* The sidebar head used to be the window's only drag handle. With the sidebar
      gone, this transparent strip near the top keeps the window movable where the
      title bar is overlaid (see isMac in the script). It is rendered only on
-     macOS and stops short of the gear's corner, and the gear outranks it in the
-     stacking order, so Settings still takes its own taps. The content column
-     starts below the strip's 24px, so nothing tappable is covered. */
+     macOS and now spans the full width: the Settings gear that used to pin the
+     top-right corner (and outrank the strip in the stacking order) is gone, and
+     the dock stays above the strip. The content column starts below the strip's
+     24px, so nothing tappable is covered. */
   .titlebar-drag {
     position: fixed;
     top: 0;
     left: 0;
-    /* Wide enough to grab, clear of the gear's corner. */
-    right: 58px;
+    right: 0;
     height: 24px;
     z-index: 80;
   }
@@ -537,71 +547,26 @@
     color: var(--accent);
   }
 
+  /* The current page tints the label only. The glyph stays monochrome, like the
+     dock's tabs — a chip behind it read as a white block on the popover. */
+  .pop-item.active .pop-icon {
+    color: var(--label);
+  }
+
+  /* A bare slot, not a chip: the 30px box exists only to hold the label's 55px
+     origin and the row's 52px height. The glyph sits directly on the popover
+     surface — no plate, no hairline. */
   .pop-icon {
     flex-shrink: 0;
     width: 30px;
     height: 30px;
     display: grid;
     place-items: center;
-    border-radius: 8px;
-    /* The mockup keeps these tiles light on both themes behind the icon. */
-    background: #f2f2f7;
-    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.08);
   }
 
   .pop-label {
     font-size: 0.95rem;
     font-weight: 500;
-  }
-
-  /* ---- settings gear (unchanged) --------------------------------------- */
-  .gear {
-    position: fixed;
-    /* Below the phone's status bar (viewport-fit=cover in app.html makes
-       env(safe-area-inset-top) real); falls back to ~10px on desktop. */
-    top: calc(env(safe-area-inset-top) + 10px);
-    right: 10px;
-    z-index: 90;
-    /* 44px keeps Settings at the minimum comfortable mobile tap target. */
-    width: 44px;
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.72);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
-    backdrop-filter: saturate(180%) blur(20px);
-    box-shadow:
-      0 2px 10px rgba(0, 0, 0, 0.1),
-      inset 0 0 0 0.5px rgba(255, 255, 255, 0.5);
-    text-decoration: none;
-    color: var(--label-2);
-    transition:
-      transform 0.15s cubic-bezier(0.23, 1, 0.32, 1),
-      color 0.15s ease,
-      background 0.15s ease;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  .gear:active {
-    transform: scale(0.92);
-  }
-
-  .gear-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  @media (hover: hover) and (pointer: fine) {
-    .gear:hover {
-      transform: rotate(30deg);
-    }
-  }
-
-  .gear.active {
-    color: var(--accent);
   }
 
   /* The :root data-theme guard makes these follow the manual theme override
@@ -617,12 +582,6 @@
   :global(:root[data-theme="dark"]) .popover {
     background: rgba(30, 30, 32, 0.9);
   }
-  :global(:root[data-theme="dark"]) .gear {
-    background: rgba(44, 44, 46, 0.8);
-    box-shadow:
-      0 2px 10px rgba(0, 0, 0, 0.35),
-      inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
-  }
   @media (prefers-color-scheme: dark) {
     :global(:root:not([data-theme="light"])) .pill,
     :global(:root:not([data-theme="light"])) .fab:not(.open) {
@@ -635,12 +594,6 @@
     :global(:root:not([data-theme="light"])) .popover {
       background: rgba(30, 30, 32, 0.9);
     }
-    :global(:root:not([data-theme="light"])) .gear {
-      background: rgba(44, 44, 46, 0.8);
-      box-shadow:
-        0 2px 10px rgba(0, 0, 0, 0.35),
-        inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
-    }
   }
 
   @media (prefers-reduced-transparency: reduce) {
@@ -651,30 +604,16 @@
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
     }
-    .gear {
-      background: #ffffff;
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-    }
     :global(:root[data-theme="dark"]) .pill,
     :global(:root[data-theme="dark"]) .fab:not(.open),
     :global(:root[data-theme="dark"]) .popover {
       background: #1c1c1e;
-    }
-    :global(:root[data-theme="dark"]) .gear {
-      background: #2a2a2d;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
     }
     @media (prefers-color-scheme: dark) {
       :global(:root:not([data-theme="light"])) .pill,
       :global(:root:not([data-theme="light"])) .fab:not(.open),
       :global(:root:not([data-theme="light"])) .popover {
         background: #1c1c1e;
-      }
-      :global(:root:not([data-theme="light"])) .gear {
-        background: #2a2a2d;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
       }
     }
   }
@@ -686,17 +625,12 @@
     .tab-icon,
     .fab,
     .fab:active,
-    .gear,
-    .gear:active,
     .thumb {
       transition: color 0.15s ease;
       transform: none;
     }
     .pop-item {
       transition: none;
-    }
-    .gear:hover {
-      transform: none;
     }
   }
 
