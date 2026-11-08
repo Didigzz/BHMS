@@ -10,6 +10,8 @@
   import RoomCard from "./RoomCard.svelte";
   import RoomDetailSheet from "$lib/components/RoomDetailSheet.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
+  import Icon from "$lib/components/Icon.svelte";
+  import Plus from "@lucide/svelte/icons/plus";
   import ReservationFormModal from "../reservations/ReservationFormModal.svelte";
   import type { ReservationFormState } from "../reservations/types";
   import type { Room, RoomFilter, RoomFormState, RoomTenant, RoomTenantChip } from "./types";
@@ -237,7 +239,15 @@
         {/if}
       </p>
     </div>
-    <button class="btn btn-primary" onclick={openAdd} disabled={formOpen}>+ Add Room</button>
+    <button
+      class="btn btn-primary btn-icon"
+      onclick={openAdd}
+      disabled={formOpen}
+      aria-label="Add room"
+      title="Add room"
+    >
+      <Icon icon={Plus} size={24} />
+    </button>
   </header>
 
   {#if error}

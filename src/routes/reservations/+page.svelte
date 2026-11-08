@@ -11,6 +11,7 @@
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
   import Icon from "$lib/components/Icon.svelte";
   import HandCoins from "@lucide/svelte/icons/hand-coins";
+  import Plus from "@lucide/svelte/icons/plus";
   import type { ConvertPayload, Reservation, ReservationFormState, RoomOption } from "./types";
 
   let reservations: Reservation[] = $state([]);
@@ -173,7 +174,15 @@
         {activeReservations.length} active · {historyReservations.length} in history
       </p>
     </div>
-    <button class="btn btn-primary" onclick={openAdd} disabled={formOpen}>+ Add Reservation</button>
+    <button
+      class="btn btn-primary btn-icon"
+      onclick={openAdd}
+      disabled={formOpen}
+      aria-label="Add reservation"
+      title="Add reservation"
+    >
+      <Icon icon={Plus} size={24} />
+    </button>
   </header>
 
   {#if error}

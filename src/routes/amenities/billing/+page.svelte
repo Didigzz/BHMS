@@ -8,6 +8,8 @@
   import AmenityBillFormModal from "./AmenityBillFormModal.svelte";
   import AmenityBillDetailModal from "./AmenityBillDetailModal.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
+  import Icon from "$lib/components/Icon.svelte";
+  import Plus from "@lucide/svelte/icons/plus";
 
   let bills: AmenityBillRow[] = $state([]);
   let loading = $state(true);
@@ -130,7 +132,9 @@
       <h1>Amenity Billing</h1>
       <p class="subtitle">{filteredBills.length} bill{filteredBills.length === 1 ? "" : "s"} shown</p>
     </div>
-    <button class="btn btn-primary" onclick={openAdd}>+ Add New Bill</button>
+    <button class="btn btn-primary btn-icon" onclick={openAdd} aria-label="Add new bill" title="Add new bill">
+      <Icon icon={Plus} size={24} />
+    </button>
   </header>
 
   {#if error}

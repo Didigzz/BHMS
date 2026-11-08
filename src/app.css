@@ -358,6 +358,20 @@ h1 {
   white-space: nowrap;
 }
 
+/* The route's action as a compact round + in the top-right corner — the spot the
+   removed Settings gear used to hold. A text button there ate the width a long
+   title needs ("Tenant Management" wrapped to two lines) and left a bare block
+   beside the subtitle; at 44px the button fills the corner, the title fits on
+   one line, and the label lives in aria-label instead of on screen. */
+.page-header.with-action > .btn-icon {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+
 /* ---- cards ---- */
 .card {
   background: var(--card);

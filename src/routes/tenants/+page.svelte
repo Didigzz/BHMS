@@ -28,6 +28,8 @@
   import { countAmenityBillsForTenant } from "$lib/amenity-actions";
   import TenantDetailModal from "./TenantDetailModal.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
+  import Icon from "$lib/components/Icon.svelte";
+  import Plus from "@lucide/svelte/icons/plus";
   import type { PaymentRecord, Room, Tenant, TenantFormState } from "./types";
 
   let tenants: Tenant[] = $state([]);
@@ -433,7 +435,15 @@
       <p class="subtitle">{activeTenants.length} tenant{activeTenants.length === 1 ? "" : "s"} in total</p>
     </div>
     {#if view === "active"}
-      <button class="btn btn-primary" onclick={openAdd} disabled={formOpen}>+ Add Tenant</button>
+      <button
+        class="btn btn-primary btn-icon"
+        onclick={openAdd}
+        disabled={formOpen}
+        aria-label="Add tenant"
+        title="Add tenant"
+      >
+        <Icon icon={Plus} size={24} />
+      </button>
     {/if}
   </header>
 
