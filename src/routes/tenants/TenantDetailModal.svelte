@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { modalMaterial } from "$lib/motion";
-  import { formatDate, phpPesoPrecise, roomLabel } from "$lib/format";
-  import { getPaymentStatus, dueDateRowLabel } from "$lib/payment-status";
-  import { pushOverlay } from "$lib/back-stack";
-  import type { Tenant } from "./types";
+  import { modalMaterial } from "$lib/ui/motion";
+  import { formatDate, phpPesoPrecise, roomLabel } from "$lib/ui/format";
+  import { getPaymentStatus, dueDateRowLabel } from "$lib/tenants/payment-status";
+  import { pushOverlay } from "$lib/ui/back-stack";
+  import type { Tenant } from "../../lib/tenants/types";
 
   let {
     tenant,

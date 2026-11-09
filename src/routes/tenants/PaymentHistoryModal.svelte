@@ -1,13 +1,21 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { modalMaterial } from "$lib/motion";
-  import { getDb } from "$lib/db";
-  import { formatDate, formatMonthRange, monthKeyOf, phpPesoPrecise } from "$lib/format";
-  import { heldBalanceOf } from "$lib/held-balance";
-  import { pushOverlay } from "$lib/back-stack";
-  import Icon from "$lib/components/Icon.svelte";
+  import { modalMaterial } from "$lib/ui/motion";
+  import { getDb } from "$lib/db/db";
+  import { phpPesoPrecise } from "$lib/ui/format";
+  import { heldBalanceOf } from "$lib/tenants/held-balance";
+  import { pushOverlay } from "$lib/ui/back-stack";
+  import Icon from "$lib/ui/Icon.svelte";
   import HandCoins from "@lucide/svelte/icons/hand-coins";
-  import type { PaymentRecord, Tenant } from "./types";
+  import type { PaymentRecord, Tenant } from "../../lib/tenants/types";
+  import {
+    buildHistoryRows,
+    type AmenityPaymentRow,
+    type RentHistoryGroup,
+  } from "$lib/amenities/amenity-payments";
+  import { getTenantAmenityPayments } from "$lib/amenities/amenity-payment-actions";
+  import { groupReceipts, loadReceiptRows, type PaymentGroup } from "$lib/tenants/payment-groups";
+  import HistoryRow from "./HistoryRow.svelte";
 
   let {
     tenant,
@@ -28,24 +36,11 @@
     onClose: () => void;
   } = $props();
 
-  /**
-   * Payments are grouped by receipt number: an advance payment for several
-   * months is one row per covered month in the DB but one receipt transaction
-   * in the UI (billing-features-spec.md §5).
-   */
-  interface PaymentGroup {
-    receipt_no: string;
-    paid_date: string;
-    first_month: string | null;
-    last_month: string | null;
-    /** Newest due date across the receipt's rows (the covered due date for new-style single payments). */
-    due_date: string;
-    total: number;
-    method: string;
-    count: number;
-  }
-
   let groups = $state<PaymentGroup[]>([]);
+  let amenityRows = $state<AmenityPaymentRow[]>([]);
+  let filter: "all" | "rent" | "amenity" = $state("all");
+
+  const merged = $derived(buildHistoryRows(groups, amenityRows));
   // The tenant's current balance pots — re-fetched so it stays fresh even
   // after an edit or an apply elsewhere (the prop may be a stale snapshot).
   let advanceHeld = $state(0);
@@ -75,27 +70,16 @@
   async function loadHistory() {
     try {
       const db = await getDb();
-      const [groupRows, balanceRows] = await Promise.all([
-        db.select<PaymentGroup[]>(
-          `SELECT receipt_no,
-                  MIN(paid_date) AS paid_date,
-                  MIN(covers_month) AS first_month,
-                  MAX(covers_month) AS last_month,
-                  MAX(due_date) AS due_date,
-                  SUM(amount) AS total,
-                  MAX(method) AS method,
-                  COUNT(*) AS count
-           FROM payments WHERE tenant_id=$1
-           GROUP BY receipt_no
-           ORDER BY MAX(id) DESC`,
-          [tenant.id]
-        ),
+      const [groupRows, balanceRows, amenity] = await Promise.all([
+        groupReceipts(db, tenant.id),
         db.select<{ advance_held: number; deposit_held: number }[]>(
           "SELECT advance_held, deposit_held FROM tenants WHERE id=$1",
           [tenant.id]
         ),
+        getTenantAmenityPayments(db, tenant.id),
       ]);
       groups = groupRows;
+      amenityRows = amenity;
       advanceHeld = balanceRows[0]?.advance_held ?? 0;
       depositHeld = balanceRows[0]?.deposit_held ?? 0;
     } catch (e) {
@@ -109,10 +93,7 @@
   async function loadRows(receiptNo: string): Promise<PaymentRecord[] | null> {
     try {
       const db = await getDb();
-      return await db.select<PaymentRecord[]>(
-        "SELECT id, amount, paid_date, due_date, covers_month, method, receipt_no FROM payments WHERE tenant_id=$1 AND receipt_no=$2 ORDER BY id",
-        [tenant.id, receiptNo]
-      );
+      return await loadReceiptRows(db, tenant.id, receiptNo);
     } catch (e) {
       loadError = `Failed to load payment: ${String(e)}`;
       return null;
@@ -120,13 +101,13 @@
   }
 
   /** Load one receipt's rows and hand them to the page to open the receipt. */
-  async function openReceipt(g: PaymentGroup) {
+  async function openReceipt(g: RentHistoryGroup) {
     const rows = await loadRows(g.receipt_no);
     if (rows) onReceipt?.(rows);
   }
 
   /** Load one transaction's rows and hand them to the page to open the edit flow. */
-  async function openEdit(g: PaymentGroup) {
+  async function openEdit(g: RentHistoryGroup) {
     const rows = await loadRows(g.receipt_no);
     if (rows) onEdit?.(rows);
   }
@@ -163,43 +144,42 @@
       </div>
     {/if}
 
+    <div class="chips history-filters" role="group" aria-label="Payment type">
+      <button type="button" class:active={filter === "all"} aria-pressed={filter === "all"} onclick={() => (filter = "all")}>All</button>
+      <button type="button" class:active={filter === "rent"} aria-pressed={filter === "rent"} onclick={() => (filter = "rent")}>Rent</button>
+      <button type="button" class:active={filter === "amenity"} aria-pressed={filter === "amenity"} onclick={() => (filter = "amenity")}>Amenities</button>
+    </div>
+
     {#if loading}
       <p class="muted">Loading payment history…</p>
     {:else if loadError}
       <p class="form-error">{loadError}</p>
-    {:else if groups.length === 0}
+    {:else if filter === "rent"}
+      {#if groups.length === 0}
+        <p class="muted no-history">No payments recorded yet.</p>
+      {:else}
+        <ul class="history-list">
+          {#each groups as g (g.receipt_no)}
+            <HistoryRow row={{ kind: "rent", paidDate: g.paid_date, group: g }} onEdit={onEdit ? openEdit : undefined} onReceipt={onReceipt ? openReceipt : undefined} />
+          {/each}
+        </ul>
+      {/if}
+    {:else if filter === "amenity"}
+      {#if amenityRows.length === 0}
+        <p class="muted no-history">No amenity payments recorded.</p>
+      {:else}
+        <ul class="history-list">
+          {#each amenityRows as payment (payment.id)}
+            <HistoryRow row={{ kind: "amenity", paidDate: payment.paid_date, payment }} />
+          {/each}
+        </ul>
+      {/if}
+    {:else if merged.length === 0}
       <p class="muted no-history">No payments recorded yet.</p>
     {:else}
       <ul class="history-list">
-        {#each groups as g (g.receipt_no)}
-          <li class="history-item">
-            <div class="history-info">
-              <span class="history-date">{formatDate(g.paid_date)}</span>
-              <span class="history-due">
-                {#if g.count === 1 && g.first_month && g.due_date && monthKeyOf(g.due_date) === g.first_month}
-                  Due {formatDate(g.due_date)}
-                {:else}
-                  {formatMonthRange(g.first_month, g.last_month)}
-                {/if}
-              </span>
-            </div>
-            <div class="history-side">
-              <span class="history-amount">{phpPesoPrecise(g.total)}</span>
-              {#if g.method !== "cash" && g.method !== "—"}
-                <span class="history-method">{g.method}</span>
-              {/if}
-              {#if onEdit}
-                <button type="button" class="btn btn-small history-edit" onclick={() => openEdit(g)}>
-                  Edit
-                </button>
-              {/if}
-              {#if onReceipt}
-                <button type="button" class="btn btn-small history-receipt" onclick={() => openReceipt(g)}>
-                  Receipt
-                </button>
-              {/if}
-            </div>
-          </li>
+        {#each merged as row (row.kind === "rent" ? `rent-${row.group.receipt_no}` : `amenity-${row.payment.id}`)}
+          <HistoryRow row={row} onEdit={onEdit ? openEdit : undefined} onReceipt={onReceipt ? openReceipt : undefined} />
         {/each}
       </ul>
     {/if}
@@ -235,7 +215,7 @@
     gap: var(--space-3);
     background: var(--accent-soft);
     border: 1px solid rgba(10, 132, 255, 0.25);
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     padding: 10px 12px;
   }
 
@@ -274,62 +254,7 @@
     overscroll-behavior: contain;
   }
 
-  /* Two-line rows: date + covered period on the left, amount + method +
-     receipt on the right — no more awkward single-line wrapping. */
-  .history-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 12px;
-    border: 1px solid var(--separator);
-    border-radius: 10px;
-    background: var(--fill);
-  }
-
-  .history-info {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    min-width: 0;
-  }
-
-  .history-date {
-    font-weight: 700;
-    font-size: 0.9rem;
-  }
-
-  .history-due {
-    color: var(--label-3);
-    font-size: 0.8rem;
-  }
-
-  .history-side {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .history-amount {
-    color: var(--accent);
-    font-weight: 700;
-    font-size: 0.9rem;
-    white-space: nowrap;
-  }
-
-  .history-method {
-    color: var(--amber-deep);
-    background: var(--amber-soft);
-    border-radius: 999px;
-    padding: 2px 8px;
-    font-size: 0.72rem;
-    font-weight: 700;
-    white-space: nowrap;
-  }
-
-  .history-receipt {
-    flex-shrink: 0;
+  .history-filters {
+    margin-bottom: 0;
   }
 </style>

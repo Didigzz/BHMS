@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { getPaymentStatus, paymentLabel } from "$lib/payment-status";
-  import { roomLabel, phpPesoPrecise } from "$lib/format";
-  import type { Tenant } from "./types";
-  import Icon from "$lib/components/Icon.svelte";
+  import { getPaymentStatus, paymentLabel } from "$lib/tenants/payment-status";
+  import { roomLabel } from "$lib/ui/format";
+  import type { Tenant } from "../../lib/tenants/types";
+  import Icon from "$lib/ui/Icon.svelte";
   import History from "@lucide/svelte/icons/history";
   import Pencil from "@lucide/svelte/icons/pencil";
   import LogOut from "@lucide/svelte/icons/log-out";
@@ -62,9 +62,6 @@
       <span class="pay-badge pay-{status}" title={statusLabel}>
         {statusLabel}
       </span>
-    {/if}
-    {#if (tenant.amenity_balance ?? 0) > 0}
-      <span class="pay-badge" style="background: var(--fill); color: var(--label-2);" title="Amenity Balance">Amenity {phpPesoPrecise(tenant.amenity_balance)}</span>
     {/if}
   </button>
 
@@ -165,9 +162,10 @@
     align-items: center;
     gap: 4px;
     min-width: 0;
-    font-size: 1.05rem;
+    font-size: 1.1rem;
     font-weight: 700;
     line-height: 1.3;
+    letter-spacing: -0.015em;
     color: var(--label);
   }
 
@@ -192,12 +190,12 @@
   }
 
   .pay-badge {
-    padding: 3px 12px;
-    border-radius: 999px;
-    font-size: 0.75rem;
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    font-size: 0.7rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.06em;
     flex-shrink: 0;
   }
   .pay-green {
@@ -234,7 +232,7 @@
     margin-top: var(--space-2);
     padding: 4px 8px;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-control);
     background: transparent;
     font-family: inherit;
     font-size: 0.85rem;
