@@ -1,12 +1,23 @@
 import { defineConfig } from "vitest/config";
+import { sveltekit } from "@sveltejs/kit/vite";
 
-// Standalone test config, deliberately separate from `vite.config.js` (which
-// loads the SvelteKit plugin and Tauri dev-server settings). Unit tests of the
-// pure $lib modules run in a bare Node environment with no browser/SvelteKit
-// coupling.
+// Test config. The SvelteKit plugin is here (unlike the original bare-Node
+// setup) so component tests resolve `$lib`, `$app/state` and `$app/navigation`
+// the same way the app does. Pure `$lib` module tests keep working unchanged —
+// jsdom is a superset of what they need.
 export default defineConfig({
+  plugins: [sveltekit()],
+  resolve: {
+    // Svelte components must be resolved with browser conditions, or the
+    // server build of Svelte is picked and `mount`/DOM APIs are missing.
+    conditions: ["browser"],
+  },
   test: {
-    environment: "node",
+    environment: "jsdom",
     include: ["src/**/*.test.ts"],
+    setupFiles: ["./src/test/setup.ts"],
+    // Svelte 5 flushes DOM updates in microtasks; let Testing Library's
+    // auto-cleanup run after each test.
+    restoreMocks: true,
   },
 });
