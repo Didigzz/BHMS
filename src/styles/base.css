@@ -1,0 +1,139 @@
+/* RentEase design system — base layer.
+   Imported (in order) by src/app.css. */
+
+/* ---- page scaffold ---- */
+/* One column at every width. This was always the phone design; the wide-screen
+   layout that stretched past 760px went with the sidebar, so a maximized window
+   renders the same 560px column. The 96px bottom padding is dock clearance and
+   is needed everywhere now that the floating dock exists at every width. */
+main {
+  max-width: 560px;
+  margin: 0 auto;
+  /* This build is edge-to-edge (MainActivity calls enableEdgeToEdge(),
+     targetSdk is 36, and app.html sets viewport-fit=cover), so the status bar
+     and the gesture bar are painted *over* the WebView. The top and bottom
+     paddings therefore have to carry their insets: without them the first
+     heading sits under the clock and the last row hides behind the floating
+     dock. The bottom figure tracks the dock, which grows by the same inset, so
+     the gap between the last row and the dock stays a constant 21px. */
+  padding: calc(24px + env(safe-area-inset-top, 0px)) 16px calc(96px + env(safe-area-inset-bottom, 0px));
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.035em; /* display tracking — tightens as type grows */
+  overflow-wrap: break-word;
+}
+
+.subtitle,
+.muted {
+  color: var(--label-2);
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  font-size: 0.92rem;
+}
+
+/* ---- eyebrow ---- */
+/* Every page and grouped section starts with the same small label: a short
+   petrol rule, then a tracked uppercase line. It is the app's voice, and it
+   gives a screen a sense of place before the title arrives. */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--label-3);
+}
+
+.eyebrow::before {
+  content: "";
+  width: 18px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+/* Section heading for a group inside a page: title left, quiet count right. */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: var(--space-2) 0 var(--space-3);
+}
+
+.section-head h2 {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.section-head .count {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- page header (every route's top block) ---- */
+/* One header shape for the whole app: the title block, plus the route's single
+   primary action pinned to the right edge when there is one.
+
+   The per-page copies of this rule carried `padding-right: 44px`, reserving
+   room for a top-right Settings gear that no longer exists (Settings lives in
+   the + menu). All it did was hold every Add button 60px off the column edge,
+   so the header never lined up with the cards underneath it. */
+.page-header {
+  margin-bottom: var(--space-5);
+}
+
+.page-header.with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.page-header.with-action .eyebrow {
+  margin-top: 2px;
+}
+
+/* The title block yields first: a long subtitle wraps instead of shoving the
+   action off the column, and the action label never breaks onto two lines. */
+.page-header.with-action > div {
+  min-width: 0;
+}
+
+.page-header.with-action > .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* The route's action as a compact round + in the top-right corner — the spot the
+   removed Settings gear used to hold. A text button there ate the width a long
+   title needs ("Tenant Management" wrapped to two lines) and left a bare block
+   beside the subtitle; at 44px the button fills the corner, the title fits on
+   one line, and the label lives in aria-label instead of on screen. */
+.page-header.with-action > .btn-icon {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-contrast);
+  box-shadow: 0 10px 22px -12px color-mix(in srgb, var(--accent) 80%, black);
+}

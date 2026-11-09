@@ -1,0 +1,321 @@
+/* RentEase design system — tokens layer.
+   Imported (in order) by src/app.css. */
+
+/* ---- base theme ---- */
+:root {
+  /* ---- vertical rhythm ---- */
+  /* One scale for the whole app, stated as a rule:
+
+       --space-1   4px   hairline gaps (label → value)
+       --space-2   8px   rows inside one group (chips, note lines)
+       --space-3  12px   within a related group; between cards in a list
+       --space-4  16px   between page blocks (alert, filters, list, cards)
+       --space-5  20px   page header → first block
+
+     This governs *vertical block rhythm* only. Left off the scale on purpose:
+     horizontal row gaps (icon → label, chip rows), padding inside controls
+     (the 44px touch targets are built from those numbers), sub-4px label
+     pairings, optical pull-ups, and chart internals. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+
+  /* ---- shape ---- */
+  /* One radius scale, stated as a rule:
+
+       --radius-sheet    24px  dialogs and bottom sheets
+       --radius-card     16px  cards, empty states, grouped surfaces
+       --radius-control  12px  buttons, inputs, menus, inner blocks
+       --radius-pill    999px  chips, badges, the nav lozenge
+
+     Nothing in the app uses a radius outside these four. */
+  --radius-sheet: 24px;
+  --radius-card: 16px;
+  --radius-control: 12px;
+  --radius-pill: 999px;
+
+  /* ---- aligned rows ---- */
+  /* The two fixed right-hand tracks of an amenity tenant row. One source of
+     truth for the bill list and the details modal so their columns line up. */
+  --aligned-amount-col: 96px;
+  --aligned-status-col: 88px;
+
+  /* ---- "Ledger" palette — light ---- */
+  /* Warm paper, ink text, and one petrol accent. Status colours are the only
+     other hues in the interface and never double as brand colour. */
+  --bg: #f4f0e7;                       /* warm paper */
+  --card: #fffdf8;                     /* sheet of paper */
+  --card-2: #faf7f0;                   /* input / inset surface */
+  --label: #1a211e;                    /* ink */
+  --label-2: #5c6662;                  /* secondary ink */
+  --label-3: #848c88;                  /* tertiary ink */
+  --separator: rgba(26, 33, 30, 0.10);
+  --separator-strong: rgba(26, 33, 30, 0.18);
+  --fill: rgba(26, 33, 30, 0.06);      /* track / inset fills */
+  --seg-pill: #ffffff;                 /* segmented control active pill */
+  --nav-surface: rgba(255, 253, 248, 0.82);
+
+  --accent: #0e5b63;                   /* petrol */
+  --accent-press: #0a474e;
+  --accent-soft: #e2efee;
+  --accent-deep: #0b4a51;              /* accent text on tint */
+  --accent-contrast: #ffffff;          /* text on a filled accent */
+
+  --green: #2f7d4f;
+  --green-press: #276743;
+  --green-deep: #1f6841;
+  --green-soft: #e6f1e8;
+  --green-contrast: #ffffff;
+
+  --red: #c1462e;
+  --red-press: #a53a25;
+  --red-deep: #9e2f1c;
+  --red-soft: #fbe9e4;
+  --red-contrast: #ffffff;
+
+  --amber: #b07a1e;
+  --amber-deep: #8a5c12;
+  --amber-soft: #f9efd8;
+
+  --gray-soft: #e9e4da;
+  --gray-deep: #5f6763;
+
+  --shadow-1: 0 1px 2px rgba(26, 33, 30, 0.04), 0 10px 24px -18px rgba(26, 33, 30, 0.35);
+  --shadow-modal: 0 28px 70px -24px rgba(16, 22, 20, 0.45);
+
+  /* System-first type: the platform face wins (SF on macOS, Segoe UI on
+     Windows), Inter only as a last-resort fallback. */
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--label);
+  background-color: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Ease theme switches instead of jumping (background only — inherited text
+     colors re-resolve instantly, so animating color here would desync them). */
+  transition: background-color 0.3s ease;
+}
+
+/* The browser's default 8px body margin was never reset. In a fixed, full-screen
+   app it only ever steals space: an 8px dead band above the page content and
+   8px off each side of the column. On a phone that mattered — the status bar and
+   the gesture bar are already taking the top and the bottom. */
+body {
+  margin: 0;
+}
+
+/* Zoom lock (dashboard-mobile-polish-spec §4). Pinch, double-tap, and text
+   zoom would scale the fixed dock and gear off their anchors, so the app
+   renders at one fixed scale. `pan-x pan-y` keeps page/sheet/row scrolling.
+   Trade-off accepted: the OS text-size setting can no longer enlarge the UI. */
+html,
+body {
+  touch-action: pan-x pan-y;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Android paints a grey rectangle over whatever was tapped. Every control
+     in the app has its own :active or :focus-visible state, so the flash is
+     only noise. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The dark palette is intentionally declared twice: `[data-theme="dark"]`
+   covers an explicit Dark choice (even when the OS is light), and the media
+   query covers "system"/unset — i.e. follow-the-device, including the brief
+   pre-init frame on launch. Both carry identical values, so there is never a
+   conflict. `data-theme` is set on <html> by src/lib/theme.ts. */
+:root[data-theme="dark"] {
+  --bg: #0d1210;
+  --card: #171d1a;
+  --card-2: #1d2421;
+  --label: #f3efe6;
+  --label-2: #aeb6b1;
+  --label-3: #838b86;
+  --separator: rgba(243, 239, 230, 0.10);
+  --separator-strong: rgba(243, 239, 230, 0.18);
+  --fill: rgba(243, 239, 230, 0.07);
+  --seg-pill: #2b342f;
+  --nav-surface: rgba(22, 28, 25, 0.86);
+
+  --accent: #6cc7c7;
+  --accent-press: #8bd7d7;
+  --accent-soft: rgba(108, 199, 199, 0.15);
+  --accent-deep: #a7e3e1;
+  --accent-contrast: #062421;
+
+  --green: #52b276;
+  --green-press: #469a65;
+  --green-deep: #93dda9;
+  --green-soft: #162b1f;
+  --green-contrast: #06210f;
+
+  --red: #e4785f;
+  --red-press: #f0917c;
+  --red-deep: #f3aa9a;
+  --red-soft: #331a14;
+  --red-contrast: #2b0d08;
+
+  --amber: #d59d44;
+  --amber-deep: #e7c07b;
+  --amber-soft: #2e2513;
+
+  --gray-soft: #262e2a;
+  --gray-deep: #bcc4bf;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 28px -20px rgba(0, 0, 0, 0.8);
+  --shadow-modal: 0 30px 80px -20px rgba(0, 0, 0, 0.8);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1210;
+    --card: #171d1a;
+    --card-2: #1d2421;
+    --label: #f3efe6;
+    --label-2: #aeb6b1;
+    --label-3: #838b86;
+    --separator: rgba(243, 239, 230, 0.10);
+    --separator-strong: rgba(243, 239, 230, 0.18);
+    --fill: rgba(243, 239, 230, 0.07);
+    --seg-pill: #2b342f;
+    --nav-surface: rgba(22, 28, 25, 0.86);
+
+    --accent: #6cc7c7;
+    --accent-press: #8bd7d7;
+    --accent-soft: rgba(108, 199, 199, 0.15);
+    --accent-deep: #a7e3e1;
+    --accent-contrast: #062421;
+
+    --green: #52b276;
+    --green-press: #469a65;
+    --green-deep: #93dda9;
+    --green-soft: #162b1f;
+    --green-contrast: #06210f;
+
+    --red: #e4785f;
+    --red-press: #f0917c;
+    --red-deep: #f3aa9a;
+    --red-soft: #331a14;
+
+    --amber: #d59d44;
+    --amber-deep: #e7c07b;
+    --amber-soft: #2e2513;
+
+    --gray-soft: #262e2a;
+    --gray-deep: #bcc4bf;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 28px -20px rgba(0, 0, 0, 0.8);
+    --shadow-modal: 0 30px 80px -20px rgba(0, 0, 0, 0.8);
+  }
+}   /* ---- manual theme switch (Settings → Appearance) ----
+   Wave reveal: the new theme starts as a point in the top-left corner and
+   spreads like a wave, its undulating front sweeping toward the bottom-right
+   over 1 second while the old one fades out at the same pace. The wavy
+   clip-path keyframes below are generated (see scripts/gen-theme-wave.mjs).
+   Timing is **linear** so the wavefront travels at a steady, continuous pace
+   all the way down — an eased curve made it crawl near the start and stall
+   as it reached the bottom-right corner. The new snapshot starts fully
+   transparent, so the reveal blends gradually instead of popping (the live
+   document underneath is already the new theme, so the blend stays
+   theme-colored — no flash). The `theme-switching` class (toggled by
+   src/lib/theme.ts) suppresses the 0.3s background fade during the wave so
+   the reveal is the only motion; the fade remains the fallback when View
+   Transitions aren't supported. */
+html.theme-switching {
+  transition: none;
+}
+
+::view-transition-old(root) {
+  animation: theme-fade-out 1s linear;
+}
+::view-transition-new(root) {
+  animation: theme-wipe-in 1s linear;
+}
+
+/* Generated by scripts/gen-theme-wave.mjs — wavy wavefront reveal
+   (top-left corner → bottom-right). Edit the constants above and
+   re-run the script instead of hand-editing this block. */
+@keyframes theme-wipe-in {
+  0% {
+    clip-path: polygon(0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%);
+    opacity: 0;
+  }
+  10% {
+    clip-path: polygon(0% 0%, 20% 0%, 20% 0%, 20.07% 2.43%, 19.49% 4.2%, 17.95% 5.01%, 15.63% 5.05%, 13.14% 4.91%, 11.16% 5.28%, 10.1% 6.58%, 9.92% 8.74%, 10.08% 11.26%, 9.9% 13.42%, 8.84% 14.72%, 6.86% 15.09%, 4.37% 14.95%, 2.05% 14.99%, 0.51% 15.8%, -0.07% 17.57%, 0% 20%, 0% 20%);
+  }
+  20% {
+    clip-path: polygon(0% 0%, 40% 0%, 40% 0%, 40.02% 4.73%, 38.81% 8.22%, 35.76% 9.87%, 31.24% 10.06%, 26.38% 9.91%, 22.49% 10.73%, 20.37% 13.31%, 19.9% 17.55%, 20.1% 22.45%, 19.63% 26.69%, 17.51% 29.27%, 13.62% 30.09%, 8.76% 29.94%, 4.24% 30.13%, 1.19% 31.78%, -0.02% 35.27%, 0% 40%, 0% 40%);
+  }
+  30% {
+    clip-path: polygon(0% 0%, 60% 0%, 60% 0%, 59.74% 6.8%, 57.77% 11.89%, 53.29% 14.46%, 46.77% 15.01%, 39.8% 15.09%, 34.15% 16.51%, 30.95% 20.36%, 30.01% 26.48%, 29.99% 33.52%, 29.05% 39.64%, 25.85% 43.49%, 20.2% 44.91%, 13.23% 44.99%, 6.71% 45.54%, 2.23% 48.11%, 0.26% 53.2%, 0% 60%, 0% 60%);
+  }
+  40% {
+    clip-path: polygon(0% 0%, 80% 0%, 80% 0%, 79.14% 8.55%, 76.27% 15.09%, 70.44% 18.67%, 62.23% 19.87%, 53.47% 20.53%, 46.28% 22.75%, 41.95% 27.83%, 40.29% 35.59%, 39.71% 44.41%, 38.05% 52.17%, 33.72% 57.25%, 26.53% 59.47%, 17.77% 60.13%, 9.56% 61.33%, 3.73% 64.91%, 0.86% 71.45%, 0% 80%, 0% 80%);
+  }
+  50% {
+    clip-path: polygon(0% 0%, 100% 0%, 100% 0%, 98.16% 9.92%, 94.21% 17.74%, 87.14% 22.44%, 77.57% 24.63%, 67.43% 26.25%, 58.93% 29.52%, 53.45% 35.81%, 50.77% 44.89%, 49.23% 55.11%, 46.55% 64.19%, 41.07% 70.48%, 32.57% 73.75%, 22.43% 75.37%, 12.86% 77.56%, 5.79% 82.26%, 1.84% 90.08%, 0% 100%, 0% 100%);
+  }
+  60% {
+    clip-path: polygon(0% 0%, 100% 0%, 100% 20%, 99.14% 28.55%, 96.27% 35.09%, 90.44% 38.67%, 82.23% 39.87%, 73.47% 40.53%, 66.28% 42.75%, 61.95% 47.83%, 60.29% 55.59%, 59.71% 64.41%, 58.05% 72.17%, 53.72% 77.25%, 46.53% 79.47%, 37.77% 80.13%, 29.56% 81.33%, 23.73% 84.91%, 20.86% 91.45%, 20% 100%, 0% 100%);
+  }
+  70% {
+    clip-path: polygon(0% 0%, 100% 0%, 100% 40%, 99.74% 46.8%, 97.77% 51.89%, 93.29% 54.46%, 86.77% 55.01%, 79.8% 55.09%, 74.15% 56.51%, 70.95% 60.36%, 70.01% 66.48%, 69.99% 73.52%, 69.05% 79.64%, 65.85% 83.49%, 60.2% 84.91%, 53.23% 84.99%, 46.71% 85.54%, 42.23% 88.11%, 40.26% 93.2%, 40% 100%, 0% 100%);
+  }
+  80% {
+    clip-path: polygon(0% 0%, 100% 0%, 100% 60%, 100.02% 64.73%, 98.81% 68.22%, 95.76% 69.87%, 91.24% 70.06%, 86.38% 69.91%, 82.49% 70.73%, 80.37% 73.31%, 79.9% 77.55%, 80.1% 82.45%, 79.63% 86.69%, 77.51% 89.27%, 73.62% 90.09%, 68.76% 89.94%, 64.24% 90.13%, 61.19% 91.78%, 59.98% 95.27%, 60% 100%, 0% 100%);
+  }
+  90% {
+    clip-path: polygon(0% 0%, 100% 0%, 100% 80%, 100.07% 82.43%, 99.49% 84.2%, 97.95% 85.01%, 95.63% 85.05%, 93.14% 84.91%, 91.16% 85.28%, 90.1% 86.58%, 89.92% 88.74%, 90.08% 91.26%, 89.9% 93.42%, 88.84% 94.72%, 86.86% 95.09%, 84.37% 94.95%, 82.05% 94.99%, 80.51% 95.8%, 79.93% 97.57%, 80% 100%, 0% 100%);
+  }
+  100% {
+    clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 0% 100%);
+    opacity: 1;
+  }
+}
+
+@keyframes theme-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/* Desktop app chrome: keep the scrollbar slim and quiet. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 4px;
+}
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.22);
+  }
+}
+
+/* Touch devices (Android WebView / phones): content still scrolls, but no
+   visible scrollbar is rendered — applies to every scrollable panel (room
+   details sheet, payment history, modal panels). Desktop keeps the slim
+   scrollbars above. */
+@media (pointer: coarse) {
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+}

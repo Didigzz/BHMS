@@ -1,0 +1,531 @@
+/* RentEase design system — components layer.
+   Imported (in order) by src/app.css. */
+
+/* ---- cards ---- */
+.card {
+  background: var(--card);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-card);
+  padding: 18px;
+  margin-bottom: var(--space-4);
+  box-shadow: var(--shadow-1);
+}
+
+/* An empty list is a quiet invitation, not another card in the stack: a
+   dashed edge and no shadow keep it from looking like content that failed. */
+.card.empty {
+  text-align: center;
+  padding: 32px 22px;
+  border-style: dashed;
+  border-color: var(--separator-strong);
+  background: color-mix(in srgb, var(--card) 55%, transparent);
+  box-shadow: none;
+}
+
+.card.empty .muted {
+  max-width: 38ch;
+  margin: 0 auto 12px;
+  line-height: 1.5;
+}
+
+.card.empty .btn {
+  margin-top: 2px;
+}
+
+/* ---- card lists ---- */
+/* Every route's list of cards. 12px is the in-group rhythm (cards of the same
+   kind), while `.card`'s own 16px bottom margin stays for distinct sections
+   (Settings). Cards inside a stack drop that margin — keeping both spaced each
+   pair 28px apart, which is the gap every list used to show. */
+/* Cards in a list own their spacing through the gap; the standalone
+   `.card` margin would otherwise double it. */
+.list-stack > .card {
+  margin-bottom: 0;
+}
+
+.list-stack {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.list-stack > .card {
+  margin-bottom: 0;
+}
+
+/* ---- aligned rows ---- */
+/* A three-track row shared by the amenity bill list and its details modal:
+   a name cell that absorbs the width, then a fixed amount track, then a fixed
+   status track. Geometry only — colour, border and padding stay per surface. */
+.aligned-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--aligned-amount-col) var(--aligned-status-col);
+  column-gap: var(--space-2);
+  align-items: center;
+}
+.aligned-row--pair {
+  grid-template-columns: minmax(0, 1fr) var(--aligned-amount-col);
+}
+.aligned-row__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.aligned-row__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aligned-row__sub {
+  font-size: 0.75rem;
+  color: var(--label-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aligned-row__amount {
+  justify-self: end;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* inline-flex so the same rule works for the <button> toggle and the <span>
+   tag: `.badge` sets no display, so a bare width would be ignored on it. */
+.aligned-row__status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+}
+.aligned-row__note {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Below 380px the fixed pair leaves too little for the name inside a list chip;
+   step the columns down once. They stay fixed, aligned and side-by-side. */
+@media (max-width: 380px) {
+  :root {
+    --aligned-amount-col: 80px;
+    --aligned-status-col: 76px;
+  }
+}
+
+/* ---- status banners ---- */
+.alert {
+  background: var(--red-soft);
+  color: var(--red-deep);
+  border: 1px solid color-mix(in srgb, var(--red) 26%, transparent);
+  border-radius: var(--radius-control);
+  padding: 11px 14px;
+  margin-bottom: var(--space-4);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+:root[data-theme="dark"] .alert {
+  border-color: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .alert {
+    border-color: transparent;
+  }
+}
+
+/* ---- status badges ---- */
+.badge {
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  /* A status badge is one word: it must never squeeze into a two-line sliver
+     beside a long room or tenant name. The name truncates instead. */
+  flex-shrink: 0;
+}
+.badge-vacant {
+  color: var(--green-deep);
+  background: var(--green-soft);
+}
+.badge-reserved {
+  color: var(--amber-deep);
+  background: var(--amber-soft);
+}
+/* Occupied is a normal state, not a warning: accent keeps it distinct from
+   Vacant (green), Reserved (amber), and the red Overdue flag beside it. */
+.badge-occupied {
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+}
+.badge-maintenance {
+  color: var(--gray-deep);
+  background: var(--gray-soft);
+}
+.badge-overdue {
+  color: var(--red-deep);
+  background: var(--red-soft);
+}
+
+/* ---- segmented control (Active/Archived, Active/History) ---- */
+.segmented {
+  display: flex;
+  background: var(--fill);
+  border-radius: var(--radius-control);
+  padding: 3px;
+  margin-bottom: var(--space-4);
+}
+
+.segmented button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 9px 10px;
+  border-radius: calc(var(--radius-control) - 3px);
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--label-2);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    transform 0.12s cubic-bezier(0.23, 1, 0.32, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.segmented button:active {
+  transform: scale(0.96);
+}
+
+.segmented button.active {
+  background: var(--seg-pill);
+  color: var(--label);
+  box-shadow:
+    inset 0 0 0 1px var(--separator),
+    0 2px 6px -3px rgba(26, 33, 30, 0.28);
+}
+
+/* ---- filter chips (rooms page) ---- */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.chips button {
+  border: 1px solid var(--separator-strong);
+  background: var(--card);
+  color: var(--label-2);
+  border-radius: var(--radius-pill);
+  padding: 7px 13px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.12s cubic-bezier(0.23, 1, 0.32, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chips button:active {
+  transform: scale(0.96);
+}
+
+.chips button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* ---- shared room-card bits ---- */
+.reserved-line {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: var(--amber-deep);
+  background: var(--amber-soft);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.held-note {
+  font-weight: 600;
+  color: var(--amber-deep);
+}
+
+/* ---- form controls ---- */
+/* A shared baseline so every input, select, and textarea starts from the same
+   paper surface, hairline, radius, and height. Route-level form styles still
+   win where they need a denser layout. */
+/* :where() keeps this baseline at zero specificity, so a route-level class
+   (search fields, compact day inputs, modal selects) always wins. */
+:where(input:not([type="checkbox"]):not([type="radio"])),
+:where(select),
+:where(textarea) {
+  font-family: inherit;
+  font-size: 1rem;
+  color: var(--label);
+  background: var(--card-2);
+  border: 1px solid var(--separator-strong);
+  border-radius: var(--radius-control);
+  padding: 11px 12px;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--label-3);
+}
+
+:where(input:not([type="checkbox"]):not([type="radio"])):focus-visible,
+:where(select):focus-visible,
+:where(textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+/* ---- form bits ---- */
+.form-error {
+  color: var(--red-deep);
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+/* ---- confirm/modal panel bits ---- */
+.confirm-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.confirm-panel h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.confirm-text {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--label-2);
+  line-height: 1.5;
+}
+
+.history-subtitle {
+  margin: -6px 0 0;
+  color: var(--label-3);
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+/* ---- inset notes (deposit warning, holding-deposit carryover) ---- */
+.deposit-note,
+.note {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--amber-deep);
+  background: var(--amber-soft);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+/* ---- info strips (pay preview, fixed-room line) ---- */
+.room-fixed,
+.pay-preview {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--label-2);
+  background: var(--fill);
+  border: 1px solid var(--separator);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+/* ---- section titles (settings cards) ---- */
+.section-title {
+  margin: 0 0 var(--space-2);
+  font-size: 1.08rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* ---- buttons ---- */
+.btn {
+  border-radius: var(--radius-control);
+  border: 1px solid var(--separator-strong);
+  padding: 10px 16px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  background: var(--card);
+  color: var(--label);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.12s cubic-bezier(0.23, 1, 0.32, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:active {
+  /* Feedback lives on the press — instant, GPU-only. */
+  transform: scale(0.97);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn-primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-contrast);
+}
+.btn-small {
+  padding: 7px 12px;
+  font-size: 0.85rem;
+}
+
+/* A quiet action: reads as a link, keeps the 44px button hit area. */
+.btn-quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--accent-deep);
+}
+
+.btn-quiet:active {
+  background: var(--accent-soft);
+}
+
+.btn-danger {
+  color: var(--red-deep);
+  border-color: color-mix(in srgb, var(--red) 30%, transparent);
+}
+.btn-paid {
+  background: var(--green);
+  border-color: transparent;
+  color: var(--green-contrast);
+}
+.btn-paid:disabled {
+  opacity: 0.5;
+  cursor: default;
+  background: var(--green);
+  color: var(--green-contrast);
+}
+
+/* Hover is a mouse state. On a touch screen the browser keeps the last hover
+   after the finger lifts, so a tapped button stayed tinted (or a card stayed
+   grey) until the next tap somewhere else. Every hover rule lives behind a
+   hover-capable query; touch gets :active feedback instead. */
+@media (hover: hover) {
+  .btn:hover {
+    border-color: var(--accent);
+  }
+  .btn-primary:hover {
+    background: var(--accent-press);
+    border-color: transparent;
+  }
+  /* Outline-style danger (Delete/Move Out buttons). */
+  .btn-danger:hover {
+    border-color: var(--red);
+    color: var(--red-deep);
+    background: var(--red-soft);
+  }
+  .btn-paid:hover {
+    background: var(--green-press);
+    border-color: transparent;
+  }
+  .btn-quiet:hover {
+    background: var(--accent-soft);
+    border-color: transparent;
+  }
+}
+
+/* ---- keyboard focus: system-style ring, never the default glow ---- */
+.btn:focus-visible,
+.segmented button:focus-visible,
+.chips button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- modal overlay (was :global(.modal) in +layout.svelte) ---- */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(13, 18, 16, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* A full-height panel is centred, so its top and bottom edges can come within
+     16px of the screen edge — inside the status bar and the gesture bar. Both
+     carry the inset now; `max()` keeps the designed 16px wherever the device
+     reports no inset at all (desktop, and every browser preview). */
+  padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  /* A flick at the end of a long dialog must not scroll the page behind it. */
+  overscroll-behavior: contain;
+  transition: background-color 0.25s ease;
+}
+
+.modal > * {
+  background: var(--card);
+  border: 1px solid var(--separator);
+  border-radius: 20px;
+  padding: 22px;
+  width: 100%;
+  max-width: 480px;
+  /* dvh measures the *visible* viewport, so the panel still fits once the
+     on-screen keyboard is up; vh is the fallback for older engines. */
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+  box-shadow: var(--shadow-modal);
+  transition:
+    opacity 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Materialized entrance: the dim fades in, the panel settles from a slight
+   scale + rise — iOS-sheet curve (cubic-bezier(0.32, 0.72, 0, 1)). */
+@starting-style {
+  .modal {
+    background-color: rgba(0, 0, 0, 0);
+  }
+  .modal > * {
+    opacity: 0;
+    transform: scale(0.96) translateY(10px);
+  }
+}

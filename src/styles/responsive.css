@@ -1,0 +1,135 @@
+/* RentEase design system — responsive layer.
+   Imported (in order) by src/app.css. */
+
+/* ---- phone: dialogs are bottom sheets -------------------------------- */
+/* A 390px phone is not a small desktop. A centered 480px dialog reads as a
+   web page in a box, and a long form has no stable edge to grow from. On
+   phones — and on touch-first tablets — the panel anchors to the bottom, rounds
+   only its top corners, and leaves the page visible above it. `dvh` follows the
+   visible viewport when the keyboard opens; the bottom padding carries the
+   gesture-bar inset; `overscroll-behavior` keeps a flick at the end of a long
+   form from scrolling the page behind. */
+@media (max-width: 640px), (pointer: coarse) {
+  .modal {
+    align-items: flex-end;
+    justify-content: stretch;
+    padding: max(10px, env(safe-area-inset-top, 0px)) 0 0;
+    overflow: hidden;
+  }
+
+  .modal > * {
+    width: 100%;
+    max-width: 620px;
+    margin-inline: auto;
+    max-height: calc(100dvh - max(10px, env(safe-area-inset-top, 0px)));
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+    padding: 22px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+    transition:
+      opacity 0.3s cubic-bezier(0.32, 0.72, 0, 1),
+      transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  @starting-style {
+    .modal > * {
+      opacity: 0;
+      transform: translateY(28px);
+    }
+  }
+}
+
+:root[data-theme="dark"] .modal {
+  background: rgba(0, 0, 0, 0.62);
+}
+:root[data-theme="dark"] .modal > * {
+  background: var(--card);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .modal {
+    background: rgba(0, 0, 0, 0.62);
+  }
+  :root:not([data-theme="light"]) .modal > * {
+    background: var(--card);
+  }
+}
+
+/* ---- reduced transparency: solid surfaces, no blur ---- */
+@media (prefers-reduced-transparency: reduce) {
+  .modal > * {
+    background: var(--card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-theme="dark"] .modal > * {
+    background: var(--card);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .modal > * {
+      background: var(--card);
+    }
+  }
+}
+
+/* While a dialog or a bottom sheet is up, the floating dock belongs to the
+   page behind it. Fading it out keeps it from peeking through translucent
+   panels and stops the tab bar competing with the dialog for attention. */
+body:has(.modal) .dock,
+body:has(.sheet-backdrop) .dock {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---- reduced motion: keep state changes, drop movement ---- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    transition: none;
+  }
+  .btn,
+  .btn:active,
+  .segmented button,
+  .segmented button:active,
+  .chips button,
+  .chips button:active,
+  .modal,
+  .modal > * {
+    transition: none;
+  }
+  .segmented button:active,
+  .chips button:active,
+  .modal > * {
+    transform: none;
+  }
+}
+
+/* ---- high contrast: give surfaces a defined edge ---- */
+@media (prefers-contrast: more) {
+  .card,
+  .modal > * {
+    border: 1px solid var(--label-3);
+  }
+}
+
+/* ---- touch targets ----
+   The shared controls above were drawn for a mouse: 38px buttons, 36px
+   segmented items, 33px chips. A fingertip needs 44px, and every one of these
+   is a top-level action — Add, Save, Export, filter, view switch — so on a
+   touch device they grow to the minimum. `pointer: coarse` covers Android and
+   iOS and leaves the denser desktop layout above untouched.
+
+   This costs vertical density: buttons and chips are ~6-11px taller on a
+   phone, which is the deliberate trade for targets the landlord can hit
+   without aiming. */
+@media (pointer: coarse) {
+  .btn,
+  .segmented button,
+  .chips button {
+    min-height: 44px;
+  }
+
+  /* "All" and "Paid" are narrower than they are tall — pad the pill out to a
+     square target rather than letting the shortest labels be the hardest taps. */
+  .chips button {
+    min-width: 44px;
+  }
+}
