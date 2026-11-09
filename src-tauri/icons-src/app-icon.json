@@ -1,0 +1,6 @@
+{
+  "default": "../../static/rentease-icon.svg",
+  "bg_color": "#103540",
+  "android_fg": "foreground.svg",
+  "android_monochrome": "monochrome.svg"
+}

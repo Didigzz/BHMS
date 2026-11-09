@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Android 13+ themed-icon layer: one flat silhouette, door knocked out, no
+       tile and no keyhole. Same scale as foreground.svg so themed and coloured
+       icons align. Only paths, so resvg renders it without fonts or filters. -->
+  <g transform="translate(78.27 78.27) scale(0.69424)">
+    <path d="M132 230v174c0 12 10 22 22 22h204c12 0 22-10 22-22V230L256 119 132 230Z M214 426V302c0-13 10-23 23-23h38c13 0 23 10 23 23v124Z" fill="#FFFFFF" fill-rule="evenodd"/>
+    <path d="M98 244 256 105l158 139" stroke="#FFFFFF" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

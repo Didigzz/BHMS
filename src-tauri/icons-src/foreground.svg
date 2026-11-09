@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Android adaptive-icon foreground: the house alone, padded to sit inside the
+       66dp safe circle. The Tauri CLI rasterises this full-bleed onto the 108dp
+       layer, so the transparent margins here are the safe zone. -->
+  <g transform="translate(78.27 78.27) scale(0.69424)">
+    <path d="M98 244 256 105l158 139" stroke="#FFC83D" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M132 230v174c0 12 10 22 22 22h204c12 0 22-10 22-22V230L256 119 132 230Z" fill="#F7F3E8"/>
+    <path d="M214 426V302c0-13 10-23 23-23h38c13 0 23 10 23 23v124" fill="#20B8C5"/>
+    <circle cx="278" cy="359" r="6" fill="#103540"/>
+  </g>
+</svg>
