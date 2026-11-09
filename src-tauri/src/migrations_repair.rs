@@ -318,7 +318,7 @@ mod tests {
 
         assert!(
             ledger_is_behind_the_schema(&conn, 5).unwrap(),
-            "5 of 75 applied against a complete schema must be treated as a broken ledger"
+            "a ledger that stops short of the schema must be treated as broken"
         );
 
         // Seeding fixes it, and the result is a ledger up to the head of the chain.
@@ -333,13 +333,17 @@ mod tests {
     #[test]
     fn an_ordinary_upgrade_is_left_to_sqlx() {
         // A database one migration behind, with a ledger to match, must NOT be
-        // seeded: migration 75 would then never run. This is the case that makes
-        // the check worth deriving rather than guessing.
+        // seeded: the newest migration would then never run. This is the case that
+        // makes the check worth deriving rather than guessing, so the version is
+        // read off the chain instead of hard-coded.
         let conn = database_from_chain();
         conn.execute_batch("CREATE TABLE _sqlx_migrations (version BIGINT PRIMARY KEY);")
             .unwrap();
+        let chain = migrations();
+        let one_behind = chain[chain.len() - 2].version;
+        assert_eq!(one_behind, chain.last().unwrap().version - 1);
         assert!(
-            !ledger_is_behind_the_schema(&conn, 74).unwrap(),
+            !ledger_is_behind_the_schema(&conn, one_behind).unwrap(),
             "a truthful ledger that is merely one step behind must be left alone"
         );
     }

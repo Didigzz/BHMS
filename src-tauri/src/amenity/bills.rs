@@ -1,99 +1,9 @@
-//! Amenity billing writes (amenity-billing-spec.md §10).
-//!
-//! Creating, editing and cancelling a bill each touch the bill row, its tenant
-//! and room rows, and every affected tenant's Amenity Balance. They run HERE,
-//! inside one rusqlite transaction, so a failure halfway leaves no rows and no
-//! balance change behind.
-//!
-//! Why not in TypeScript: tauri-plugin-sql hands every `execute` a connection
-//! from its pool, so a `BEGIN` there does not guard the statements that follow
-//! (and `SELECT last_insert_rowid()` can answer from the wrong connection).
-//!
-//! Errors handed back to the frontend are stable codes ("amenity:manual-sum"),
-//! never prose — the locked user-facing messages live in
-//! src/lib/amenity-billing.ts (spec §12, todo T10) and the caller maps codes to
-//! them, so no message text is duplicated.
+//! Bill create/edit and soft-cancel, each in one rusqlite transaction.
 
-use crate::db::database_path;
-
-#[derive(serde::Deserialize)]
-pub(crate) struct AmenityTenantInput {
-    tenant_id: i64,
-    amount: f64,
-}
-
-#[derive(serde::Deserialize)]
-pub(crate) struct AmenityExcludedInput {
-    tenant_id: i64,
-    reason: String,
-}
-
-#[derive(serde::Deserialize)]
-pub(crate) struct AmenityBillInput {
-    bill_id: Option<i64>,
-    amenity_name: String,
-    billing_method: String,
-    total_amount: f64,
-    billing_date: String,
-    billing_period: Option<String>,
-    notes: Option<String>,
-    division_mode: String,
-    meter_start: Option<f64>,
-    meter_end: Option<f64>,
-    price_per_unit: Option<f64>,
-    tenants: Vec<AmenityTenantInput>,
-    excluded: Vec<AmenityExcludedInput>,
-    room_ids: Vec<i64>,
-}
-
-/// Shares may run up to ₱1 below the bill total (the landlord absorbs the
-/// leftover centavos, spec §8.1) but never above it. Mirrors MAX_ABSORBED in
-/// src/lib/amenity-billing.ts.
-const AMENITY_MAX_ABSORBED: f64 = 1.0;
-
-fn round2(value: f64) -> f64 {
-    (value * 100.0).round() / 100.0
-}
-
-/// Structural re-check of the exact payload that arrived over IPC. Returns a
-/// code the frontend translates into a locked message.
-fn validate_amenity_input(input: &AmenityBillInput) -> Result<(), String> {
-    if input.amenity_name.trim().is_empty() {
-        return Err("amenity:name".to_string());
-    }
-    if !input.total_amount.is_finite() || input.total_amount <= 0.0 {
-        return Err("amenity:amount".to_string());
-    }
-    if !matches!(input.billing_method.as_str(), "shared" | "per_room" | "connected") {
-        return Err("amenity:method".to_string());
-    }
-    if input.division_mode != "auto" && input.division_mode != "manual" {
-        return Err("amenity:division-mode".to_string());
-    }
-    if input.billing_method != "shared" && input.room_ids.is_empty() {
-        return Err("amenity:selection".to_string());
-    }
-    if input.billing_method == "shared" && input.tenants.is_empty() && input.excluded.is_empty() {
-        return Err("amenity:selection".to_string());
-    }
-    if input.billing_method == "connected" && input.room_ids.len() < 2 {
-        return Err("amenity:connected-rooms".to_string());
-    }
-    if input.excluded.iter().any(|row| row.reason.trim().is_empty()) {
-        return Err("amenity:exclusion-reason".to_string());
-    }
-    if input.tenants.iter().any(|row| !row.amount.is_finite() || row.amount < 0.0) {
-        return Err("amenity:negative-amount".to_string());
-    }
-    if input.division_mode == "manual" {
-        let sum: f64 = input.tenants.iter().map(|row| row.amount).sum();
-        let shortfall = round2(input.total_amount - round2(sum));
-        if shortfall < -0.005 || shortfall > AMENITY_MAX_ABSORBED + 0.005 {
-            return Err("amenity:manual-sum".to_string());
-        }
-    }
-    Ok(())
-}
+use super::conn::amenity_db_connection;
+use super::shares::reverse_payment_row;
+use super::types::AmenityBillInput;
+use super::validation::{round2, validate_amenity_input};
 
 /// Name + room number frozen on the bill so history survives a rename, a room
 /// change, or (eventually) a tenant delete.
@@ -106,20 +16,12 @@ fn amenity_tenant_snapshot(conn: &rusqlite::Connection, tenant_id: i64) -> (Stri
     .unwrap_or_else(|_| (format!("Tenant {tenant_id}"), "—".to_string()))
 }
 
-fn amenity_db_connection(app: &tauri::AppHandle) -> Result<rusqlite::Connection, String> {
-    let path = database_path(app)?;
-    let conn = rusqlite::Connection::open(&path)
-        .map_err(|e| format!("could not open the database: {e}"))?;
-    // The sql plugin holds its own pooled connection; wait rather than fail if
-    // a write is in flight.
-    conn.busy_timeout(std::time::Duration::from_secs(5))
-        .map_err(|e| e.to_string())?;
-    Ok(conn)
-}
-
 /// Create (bill_id = None) or edit (bill_id = Some) a bill with its tenant
 /// shares and balance deltas, all inside one transaction. Returns the bill id.
-fn save_amenity_bill_sync(app: &tauri::AppHandle, input: &AmenityBillInput) -> Result<i64, String> {
+pub(crate) fn save_amenity_bill_sync(
+    app: &tauri::AppHandle,
+    input: &AmenityBillInput,
+) -> Result<i64, String> {
     validate_amenity_input(input)?;
 
     let mut conn = amenity_db_connection(app)?;
@@ -142,6 +44,19 @@ fn save_amenity_bill_sync(app: &tauri::AppHandle, input: &AmenityBillInput) -> R
                 .map_err(|_| "amenity:not-found".to_string())?;
             if status == "cancelled" {
                 return Err("amenity:cancelled".to_string());
+            }
+            // Decision 11: once money is recorded, the bill's shares are
+            // evidence. Void the payments first; the UI disables Edit too, but
+            // this is the enforcement that matters.
+            let active_payments: i64 = tx
+                .query_row(
+                    "SELECT COUNT(*) FROM amenity_payments WHERE bill_id = ?1 AND status = 'active'",
+                    [bill_id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            if active_payments > 0 {
+                return Err("amenity:paid-locked".to_string());
             }
             let mut statement = tx
                 .prepare(
@@ -217,15 +132,22 @@ fn save_amenity_bill_sync(app: &tauri::AppHandle, input: &AmenityBillInput) -> R
         }
         let (name, room_number) = amenity_tenant_snapshot(&tx, tenant.tenant_id);
         tx.execute(
-            "INSERT INTO amenity_bill_tenants (bill_id, tenant_id, amount, is_excluded, exclusion_reason, payment_status, tenant_name_snapshot, room_number_snapshot) VALUES (?1,?2,?3,0,NULL,'Unpaid',?4,?5)",
-            rusqlite::params![bill_id, tenant.tenant_id, tenant.amount, name, room_number],
+            "INSERT INTO amenity_bill_tenants (bill_id, tenant_id, amount, is_excluded, exclusion_reason, payment_status, tenant_name_snapshot, room_number_snapshot, is_manual) VALUES (?1,?2,?3,0,NULL,'Unpaid',?4,?5,?6)",
+            rusqlite::params![
+                bill_id,
+                tenant.tenant_id,
+                tenant.amount,
+                name,
+                room_number,
+                if tenant.is_manual { 1 } else { 0 },
+            ],
         )
         .map_err(|e| format!("could not save a tenant share: {e}"))?;
     }
     for excluded in &input.excluded {
         let (name, room_number) = amenity_tenant_snapshot(&tx, excluded.tenant_id);
         tx.execute(
-            "INSERT INTO amenity_bill_tenants (bill_id, tenant_id, amount, is_excluded, exclusion_reason, payment_status, tenant_name_snapshot, room_number_snapshot) VALUES (?1,?2,0,1,?3,'Unpaid',?4,?5)",
+            "INSERT INTO amenity_bill_tenants (bill_id, tenant_id, amount, is_excluded, exclusion_reason, payment_status, tenant_name_snapshot, room_number_snapshot, is_manual) VALUES (?1,?2,0,1,?3,'Unpaid',?4,?5,0)",
             rusqlite::params![
                 bill_id,
                 excluded.tenant_id,
@@ -289,7 +211,7 @@ fn save_amenity_bill_sync(app: &tauri::AppHandle, input: &AmenityBillInput) -> R
 
 /// Soft-cancel: keep every row, reverse all non-excluded shares (including
 /// ones already marked Paid — spec §11).
-fn cancel_amenity_bill_sync(app: &tauri::AppHandle, bill_id: i64) -> Result<(), String> {
+pub(crate) fn cancel_amenity_bill_sync(app: &tauri::AppHandle, bill_id: i64) -> Result<(), String> {
     let mut conn = amenity_db_connection(app)?;
     let tx = conn
         .transaction()
@@ -310,6 +232,24 @@ fn cancel_amenity_bill_sync(app: &tauri::AppHandle, bill_id: i64) -> Result<(), 
     )
     .map_err(|e| format!("could not cancel the bill: {e}"))?;
 
+    // Reverse active payments BEFORE removing the shares' charges: a paid
+    // tenant then nets +paid − share = 0, while an unpaid share only loses its
+    // charge (spec §3.5).
+    let payment_ids: Vec<i64> = {
+        let mut statement = tx
+            .prepare("SELECT id FROM amenity_payments WHERE bill_id = ?1 AND status = 'active'")
+            .map_err(|e| e.to_string())?;
+        let collected = statement
+            .query_map([bill_id], |row| row.get::<_, i64>(0))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<i64>, _>>()
+            .map_err(|e| e.to_string())?;
+        collected
+    };
+    for payment_id in payment_ids {
+        reverse_payment_row(&tx, payment_id, Some("Bill cancelled"))?;
+    }
+
     let rows: Vec<(i64, f64)> = {
         let mut statement = tx
             .prepare("SELECT tenant_id, amount FROM amenity_bill_tenants WHERE bill_id = ?1")
@@ -325,7 +265,7 @@ fn cancel_amenity_bill_sync(app: &tauri::AppHandle, bill_id: i64) -> Result<(), 
     for (tenant_id, amount) in rows {
         if amount > 0.0 {
             tx.execute(
-                "UPDATE tenants SET amenity_balance = amenity_balance - ?1 WHERE id = ?2",
+                "UPDATE tenants\n                 SET amenity_balance = CASE\n                     WHEN ROUND(amenity_balance - ?1, 2) = 0 THEN 0\n                     ELSE ROUND(amenity_balance - ?1, 2)\n                 END\n                 WHERE id = ?2",
                 rusqlite::params![amount, tenant_id],
             )
             .map_err(|e| format!("could not reverse an amenity balance: {e}"))?;
@@ -335,24 +275,4 @@ fn cancel_amenity_bill_sync(app: &tauri::AppHandle, bill_id: i64) -> Result<(), 
     tx.commit()
         .map_err(|e| format!("could not cancel the bill: {e}"))?;
     Ok(())
-}
-
-/// Create or edit an amenity bill atomically (single connection, one
-/// transaction). Returns the bill id.
-#[tauri::command]
-pub(crate) async fn save_amenity_bill(
-    app: tauri::AppHandle,
-    input: AmenityBillInput,
-) -> Result<i64, String> {
-    tauri::async_runtime::spawn_blocking(move || save_amenity_bill_sync(&app, &input))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-/// Soft-cancel an amenity bill and reverse its balance effects atomically.
-#[tauri::command]
-pub(crate) async fn cancel_amenity_bill(app: tauri::AppHandle, bill_id: i64) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || cancel_amenity_bill_sync(&app, bill_id))
-        .await
-        .map_err(|e| e.to_string())?
 }

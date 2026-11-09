@@ -19,7 +19,10 @@ mod migrations;
 mod migrations_repair;
 
 // Brought into scope for `generate_handler!` at the bottom of this file.
-use amenity::{cancel_amenity_bill, save_amenity_bill};
+use amenity::{
+    cancel_amenity_bill, record_amenity_bill_payments, record_amenity_payment, save_amenity_bill,
+    update_amenity_payment_date, void_amenity_payment,
+};
 use backup::{
     database_state, install_backup_file, mark_database_initialised, restore_preflight,
     restore_safety_copy, save_backup_to_downloads, save_safety_copy, share_backup_file,
@@ -166,7 +169,11 @@ pub fn run() {
             mark_database_initialised,
             restore_safety_copy,
             save_amenity_bill,
-            cancel_amenity_bill
+            cancel_amenity_bill,
+            record_amenity_payment,
+            record_amenity_bill_payments,
+            void_amenity_payment,
+            update_amenity_payment_date
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

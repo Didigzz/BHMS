@@ -461,5 +461,48 @@ pub(crate) fn migrations() -> Vec<Migration> {
             "drop_amenity_type",
             include_str!("../migrations/075-drop_amenity_type.sql"),
         ),
+        // Amenity payments ledger (amenity-payment-flow-spec.md): one row per
+        // settled share, plus the backfill that turns the old Paid flags into
+        // dated payments and recomputes every balance as outstanding money.
+        migration(
+            76,
+            "create_amenity_payments",
+            include_str!("../migrations/076-create_amenity_payments.sql"),
+        ),
+        migration(
+            77,
+            "create_amenity_payments_active_index",
+            include_str!("../migrations/077-create_amenity_payments_active_index.sql"),
+        ),
+        migration(
+            78,
+            "create_amenity_payments_paid_date_index",
+            include_str!("../migrations/078-create_amenity_payments_paid_date_index.sql"),
+        ),
+        migration(
+            79,
+            "create_amenity_payments_bill_index",
+            include_str!("../migrations/079-create_amenity_payments_bill_index.sql"),
+        ),
+        migration(
+            80,
+            "create_amenity_payments_tenant_index",
+            include_str!("../migrations/080-create_amenity_payments_tenant_index.sql"),
+        ),
+        migration(
+            81,
+            "backfill_amenity_payments",
+            include_str!("../migrations/081-backfill_amenity_payments.sql"),
+        ),
+        migration(
+            82,
+            "recompute_amenity_balances",
+            include_str!("../migrations/082-recompute_amenity_balances.sql"),
+        ),
+        migration(
+            83,
+            "add_is_manual_to_amenity_bill_tenants",
+            include_str!("../migrations/083-add_is_manual_to_amenity_bill_tenants.sql"),
+        ),
     ]
 }
