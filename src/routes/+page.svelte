@@ -1,17 +1,19 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { daysUntilDue, getPaymentStatus } from "$lib/payment-status";
-  import { getDb } from "$lib/db";
-  import { ROOM_STATUS_SQL, type RoomStatus } from "$lib/room-status";
-  import type { BoarderSheetRoom } from "$lib/rooms";
-  import StatCards from "./StatCards.svelte";
-  import DashboardRoomCard from "./DashboardRoomCard.svelte";
-  import RoomDetailSheet from "$lib/components/RoomDetailSheet.svelte";
-  import EarningsCard from "./EarningsCard.svelte";
-  import { currentMonthKey, type EarningsPayment, type EarningsTenant } from "$lib/earnings";
-  import type { DashboardRoom, TenantChip } from "./types";
-  import Icon from "$lib/components/Icon.svelte";
-  import BrandLogo from "$lib/components/BrandLogo.svelte";
+  import { daysUntilDue, getPaymentStatus } from "$lib/tenants/payment-status";
+  import { getDb } from "$lib/db/db";
+  import { ROOM_STATUS_SQL, type RoomStatus } from "$lib/rooms/room-status";
+  import type { BoarderSheetRoom } from "$lib/rooms/rooms";
+  import StatCards from "../lib/dashboard/StatCards.svelte";
+  import DashboardRoomCard from "../lib/dashboard/DashboardRoomCard.svelte";
+  import RoomDetailSheet from "$lib/rooms/room-sheet/RoomDetailSheet.svelte";
+  import EarningsCard from "../lib/dashboard/EarningsCard.svelte";
+  import { currentMonthKey, type EarningsPayment, type EarningsTenant } from "$lib/reports/earnings";
+  import type { DashboardRoom, TenantChip } from "../lib/dashboard/types";
+  import Icon from "$lib/ui/Icon.svelte";
+  import BrandLogo from "$lib/ui/BrandLogo.svelte";
+  import SkeletonList from "$lib/ui/SkeletonList.svelte";
+  import { bucketOf } from "$lib/tenants/tenant-filter";
   import CircleAlert from "@lucide/svelte/icons/circle-alert";
   import Clock from "@lucide/svelte/icons/clock";
 
@@ -139,17 +141,34 @@
   // one tenant.
   const totalTenants = $derived(rooms.reduce((acc, r) => acc + r.tenants.length, 0));
   const occupiedRooms = $derived(rooms.filter((r) => r.tenants.length > 0).length);
+  // Counts use the same buckets as the tenants page filters they link to, so
+  // "3 overdue" opens exactly those three cards — never a different set.
   const overdueCount = $derived(
-    rooms.reduce((acc, r) => acc + r.tenants.filter((t) => t.status === "red").length, 0)
+    rooms.reduce(
+      (acc, r) =>
+        acc +
+        r.tenants.filter(
+          (t) => bucketOf({ due_date: t.dueDate, last_paid_date: t.lastPaidDate }) === "due"
+        ).length,
+      0
+    )
   );
   const dueSoonCount = $derived(
-    rooms.reduce((acc, r) => acc + r.tenants.filter((t) => t.status !== "red" && t.daysUntil <= 7).length, 0)
+    rooms.reduce(
+      (acc, r) =>
+        acc +
+        r.tenants.filter(
+          (t) => bucketOf({ due_date: t.dueDate, last_paid_date: t.lastPaidDate }) === "due-soon"
+        ).length,
+      0
+    )
   );
 </script>
 
 <main>
-  <header class="page-header">
-    <div class="brand-row"><BrandLogo size={32} /></div>
+  <header class="page-header dashboard-head">
+    <div class="brand-row"><BrandLogo size={30} /></div>
+    <p class="eyebrow">Overview</p>
     <h1>Dashboard</h1>
     <p class="subtitle">At-a-glance overview of the boarding house</p>
   </header>
@@ -158,43 +177,65 @@
     <div class="alert">{error}</div>
   {/if}
 
-  {#if !loading}
+  {#if loading}
+    <SkeletonList count={3} lines={3} hero />
+  {:else}
     <EarningsCard tenants={earningsTenants} payments={earningsPayments} bind:month={earningsMonth} />
-  {/if}
 
-  {#if !loading && rooms.length > 0}
-    <StatCards roomCount={rooms.length} tenantCount={totalTenants} occupiedCount={occupiedRooms} />
+    {#if rooms.length > 0}
+      <StatCards roomCount={rooms.length} tenantCount={totalTenants} occupiedCount={occupiedRooms} />
 
-    {#if overdueCount + dueSoonCount > 0}
-      <div class="summary-strip" aria-label="Payment summary">
-        {#if overdueCount > 0}
-          <span class="summary-item summary-overdue"><Icon icon={CircleAlert} size={16} /> {overdueCount} overdue</span>
-        {/if}
-        {#if dueSoonCount > 0}
-          <span class="summary-item summary-soon"><Icon icon={Clock} size={16} /> {dueSoonCount} due this week</span>
-        {/if}
+      {#if overdueCount + dueSoonCount > 0}
+        <section class="attention" aria-labelledby="attention-title">
+          <h2 class="eyebrow" id="attention-title">Needs attention</h2>
+          <div class="attention-grid">
+            {#if overdueCount > 0}
+              <a class="attention-item overdue" href="/tenants?status=due">
+                <span class="attention-icon" aria-hidden="true"><Icon icon={CircleAlert} size={20} /></span>
+                <span class="attention-body">
+                  <strong>{overdueCount} overdue</strong>
+                  <span>Review unpaid rent</span>
+                </span>
+                <span class="attention-chevron" aria-hidden="true">›</span>
+              </a>
+            {/if}
+            {#if dueSoonCount > 0}
+              <a class="attention-item soon" href="/tenants?status=due-soon">
+                <span class="attention-icon" aria-hidden="true"><Icon icon={Clock} size={20} /></span>
+                <span class="attention-body">
+                  <strong>{dueSoonCount} due soon</strong>
+                  <span>Coming up in the next 14 days</span>
+                </span>
+                <span class="attention-chevron" aria-hidden="true">›</span>
+              </a>
+            {/if}
+          </div>
+        </section>
+      {/if}
+
+      <div class="section-head">
+        <h2>Rooms</h2>
+        <span class="count">{rooms.length} total</span>
+      </div>
+
+      <ul class="legend" aria-label="Payment status legend">
+        <li><span class="legend-dot green"></span> Paid / Current</li>
+        <li><span class="legend-dot yellow"></span> Due soon</li>
+        <li><span class="legend-dot red"></span> Overdue</li>
+      </ul>
+
+      <ul class="list-stack">
+        {#each rooms as room (room.id)}
+          <DashboardRoomCard room={room} onView={openDetail} />
+        {/each}
+      </ul>
+    {:else}
+      <div class="card empty">
+        <p class="muted">
+          No rooms yet. Add your first room from the Rooms tab and your tenants will appear here.
+        </p>
       </div>
     {/if}
-
-    <ul class="legend" aria-label="Payment status legend">
-      <li><span class="legend-dot green"></span> Paid / Current</li>
-      <li><span class="legend-dot yellow"></span> Due soon</li>
-      <li><span class="legend-dot red"></span> Overdue</li>
-    </ul>
-  {/if}
-
-  {#if loading}
-    <p class="muted">Loading dashboard…</p>
-  {:else if rooms.length === 0}
-    <div class="card empty">
-      <p class="muted">No rooms yet. Add your first room from the Rooms tab.</p>
-    </div>
-  {:else}
-    <ul class="list-stack">
-      {#each rooms as room (room.id)}
-        <DashboardRoomCard room={room} onView={openDetail} />
-      {/each}
-    </ul>
   {/if}
 
   {#if detailRoom}
@@ -207,33 +248,83 @@
 <style>
   /* The app introduces itself here, then names the screen. */
   .brand-row {
-    margin-bottom: var(--space-3);
+    margin-bottom: 18px;
   }
 
-  /* ---- summary strip ---- */
-  .summary-strip {
+  /* ---- needs attention: two tappable, status-tinted rows ---- */
+  .attention {
+    margin-bottom: var(--space-4);
+  }
+
+  .attention-grid {
+    display: grid;
+    gap: 8px;
+  }
+
+  .attention-item {
     display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    margin-bottom: var(--space-3);
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid;
+    border-radius: var(--radius-card);
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      transform 0.12s cubic-bezier(0.23, 1, 0.32, 1),
+      opacity 0.12s ease;
   }
 
-  .summary-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    border-radius: 999px;
-    padding: 4px 12px;
-    font-size: 0.8rem;
-    font-weight: 700;
+  .attention-item:active {
+    transform: scale(0.99);
+    opacity: 0.85;
   }
-  .summary-overdue {
+
+  .attention-item.overdue {
     color: var(--red-deep);
     background: var(--red-soft);
+    border-color: color-mix(in srgb, var(--red) 24%, transparent);
   }
-  .summary-soon {
+
+  .attention-item.soon {
     color: var(--amber-deep);
     background: var(--amber-soft);
+    border-color: color-mix(in srgb, var(--amber) 26%, transparent);
+  }
+
+  .attention-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    background: color-mix(in srgb, currentColor 12%, transparent);
+  }
+
+  .attention-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .attention-body strong {
+    font-size: 0.92rem;
+    font-weight: 700;
+  }
+
+  .attention-body span {
+    font-size: 0.78rem;
+    font-weight: 600;
+    opacity: 0.75;
+  }
+
+  .attention-chevron {
+    font-size: 1.35rem;
+    line-height: 1;
+    opacity: 0.55;
   }
 
   /* ---- legend ---- */
@@ -241,10 +332,10 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-3);
-    margin: 0 0 var(--space-4) 2px;
+    margin: 0 0 var(--space-3) 2px;
     padding: 0;
     list-style: none;
-    font-size: 0.78rem;
+    font-size: 0.74rem;
     color: var(--label-2);
   }
 
@@ -255,8 +346,8 @@
   }
 
   .legend-dot {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     display: inline-block;
   }
