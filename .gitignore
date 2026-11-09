@@ -17,3 +17,5 @@ vite.config.ts.timestamp-*
 .omo/
 # local dev db (tracked historically, but skip future adds)
 .freebuff/
+# code-graph index cache
+/.codegraph/
