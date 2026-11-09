@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getSetting, setSetting } from "$lib/settings";
-  import { pushToast } from "$lib/toast.svelte";
+  import { getSetting, setSetting } from "$lib/db/settings";
+  import { pushToast } from "$lib/ui/toast.svelte";
 
   let {
     onError,
@@ -78,7 +78,7 @@
     gap: 8px;
     margin-top: 12px;
     padding: 12px 14px;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     background: var(--fill);
     text-decoration: none;
     color: var(--label);
@@ -122,7 +122,7 @@
   .capacity-row input {
     flex: 1;
     min-width: 0;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     border: 1px solid var(--separator);
     padding: 10px 12px;
     font-size: 1rem;

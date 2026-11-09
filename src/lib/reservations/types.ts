@@ -1,9 +1,9 @@
-import type { HoldType } from "$lib/reservations";
+import type { HoldType } from "$lib/reservations/reservations";
 
 // HoldType and ReservationFormState live in src/lib/reservations.ts (shared
 // with the room-card Reserve flow); re-exported here so the existing imports
 // in this route keep working unchanged.
-export type { HoldType, ReservationFormState } from "$lib/reservations";
+export type { HoldType, ReservationFormState } from "$lib/reservations/reservations";
 
 export type ResStatus = "active" | "converted" | "cancelled";
 

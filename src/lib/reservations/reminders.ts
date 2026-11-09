@@ -1,8 +1,8 @@
 import { isPermissionGranted, sendNotification } from "@tauri-apps/plugin-notification";
-import { getDb } from "./db";
-import { getSetting } from "./settings";
-import { daysUntilDue, getPaymentStatus } from "./payment-status";
-import { formatDate, phpPeso } from "./format";
+import { getDb } from "../db/db";
+import { getSetting } from "../db/settings";
+import { daysUntilDue, getPaymentStatus } from "../tenants/payment-status";
+import { formatDate, phpPeso } from "../ui/format";
 
 /**
  * Check-on-open notification engine (implementation-plan.md §2.3).

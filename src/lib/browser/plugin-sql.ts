@@ -13,7 +13,7 @@ import initSqlJs from "sql.js";
 import wasmUrl from "sql.js/dist/sql-wasm.wasm?url";
 import { getShim, idbDelete, idbGet, idbSet, vfs } from "./vfs";
 import { migrations } from "./migrations";
-import { REQUIRED_TABLES, fromBackupValue, parseBackupFile } from "../backup-format";
+import { REQUIRED_TABLES, fromBackupValue, parseBackupFile } from "../backup/backup-format";
 
 type SqlJsStatic = Awaited<ReturnType<typeof initSqlJs>>;
 type SqlJsDatabase = InstanceType<SqlJsStatic["Database"]>;

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
-  import { getSetting, setSetting } from "$lib/settings";
+  import { getSetting, setSetting } from "$lib/db/settings";
 
   let {
     onError,
@@ -194,7 +194,7 @@
   }
 
   .switch-row input:checked {
-    background: var(--green);
+    background: var(--accent);
   }
   .switch-row input:checked::after {
     transform: translateX(20px);
@@ -216,7 +216,7 @@
 
   .days-input {
     width: 64px;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     border: 1px solid var(--separator);
     padding: 8px 10px;
     font-size: 1rem;

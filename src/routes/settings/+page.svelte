@@ -3,7 +3,7 @@
   import BackupSection from "./BackupSection.svelte";
   import NotificationsSection from "./NotificationsSection.svelte";
   import HouseNameSection from "./HouseNameSection.svelte";
-  import BrandLogo from "$lib/components/BrandLogo.svelte";
+  import BrandLogo from "$lib/ui/BrandLogo.svelte";
   import DepositRefundSection from "./DepositRefundSection.svelte";
   import ReportsSection from "./ReportsSection.svelte";
 
@@ -16,6 +16,7 @@
 <main>
   <header class="page-header">
     <div>
+      <p class="eyebrow">Preferences</p>
       <h1>Settings</h1>
       <p class="subtitle">Theme, backup, notifications &amp; app info</p>
     </div>
@@ -61,8 +62,8 @@
   .note-ok {
     background: var(--green-soft);
     color: var(--green-deep);
-    border: 1px solid rgba(11, 110, 47, 0.2);
-    border-radius: 10px;
+    border: 1px solid color-mix(in srgb, var(--green) 26%, transparent);
+    border-radius: var(--radius-control);
     padding: 10px 12px;
     margin-bottom: 16px;
   }

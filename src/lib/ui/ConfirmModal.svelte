@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, type Snippet } from "svelte";
-  import { modalMaterial } from "$lib/motion";
-  import { pushOverlay } from "$lib/back-stack";
+  import { modalMaterial } from "$lib/ui/motion";
+  import { pushOverlay } from "$lib/ui/back-stack";
 
   /**
    * Shared confirmation dialog — the app-wide pattern for any action that
@@ -92,11 +92,13 @@
   .btn-danger {
     background: var(--red);
     border-color: transparent;
-    color: #ffffff;
+    color: var(--red-contrast);
   }
-  .btn-danger:hover {
-    background: var(--red-press);
-    border-color: transparent;
-    color: #ffffff;
+  @media (hover: hover) {
+    .btn-danger:hover {
+      background: var(--red-press);
+      border-color: transparent;
+      color: var(--red-contrast);
+    }
   }
 </style>

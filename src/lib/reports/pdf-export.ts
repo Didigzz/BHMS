@@ -17,8 +17,8 @@
  */
 
 import type { UserOptions } from "jspdf-autotable";
-import { isTauri } from "./db";
-import { roomLabel } from "./format";
+import { isTauri } from "../db/db";
+import { roomLabel } from "../ui/format";
 
 /** Everything the PDF needs — mirrors what the report page already computed. */
 export interface SalesReportPdfData {
@@ -43,7 +43,7 @@ const PAGE_W = 595.28; // A4 portrait, pt
 const PAGE_H = 841.89;
 const MARGIN = 40;
 const CONTENT_W = PAGE_W - MARGIN * 2;
-const ACCENT: [number, number, number] = [0, 122, 255];
+const ACCENT: [number, number, number] = [14, 91, 99];
 const NEG_ACCENT: [number, number, number] = [255, 59, 48]; // negative buckets (red)
 const GRAY: [number, number, number] = [108, 108, 112];
 

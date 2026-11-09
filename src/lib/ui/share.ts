@@ -17,7 +17,7 @@
  * double as an archive and never collide with each other.
  */
 
-import { isTauri } from "./db";
+import { isTauri } from "../db/db";
 
 /** Browser-preview fallback: plain download of the data URL. */
 function downloadInBrowser(dataUrl: string, filename: string): void {

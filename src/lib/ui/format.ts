@@ -41,6 +41,11 @@ export function phpPesoPrecise(amount: number): string {
   return phpPesoPreciseFormatter.format(amount);
 }
 
+/** A peso amount for totals/ledgers: negatives use a true minus sign. */
+export function phpPesoSigned(amount: number): string {
+  return phpPeso(amount).replace(/^-/, "−");
+}
+
 /**
  * Render a room's display label with exactly one "Room" prefix. Room numbers
  * are free-form ("101", "Room 101", "Annex B"), so when a stored value

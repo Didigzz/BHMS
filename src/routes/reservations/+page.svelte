@@ -1,18 +1,19 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { page } from "$app/state";
-  import { getDb } from "$lib/db";
-  import { phpPesoPrecise } from "$lib/format";
-  import { insertReservation } from "$lib/reservations";
-  import { pushToast } from "$lib/toast.svelte";
+  import { getDb } from "$lib/db/db";
+  import { phpPesoPrecise } from "$lib/ui/format";
+  import { insertReservation } from "$lib/reservations/reservations";
+  import { pushToast } from "$lib/ui/toast.svelte";
   import ReservationFormModal from "./ReservationFormModal.svelte";
   import ConvertModal from "./ConvertModal.svelte";
   import ReservationCard from "./ReservationCard.svelte";
-  import ConfirmModal from "$lib/components/ConfirmModal.svelte";
-  import Icon from "$lib/components/Icon.svelte";
+  import ConfirmModal from "$lib/ui/ConfirmModal.svelte";
+  import SkeletonList from "$lib/ui/SkeletonList.svelte";
+  import Icon from "$lib/ui/Icon.svelte";
   import HandCoins from "@lucide/svelte/icons/hand-coins";
   import Plus from "@lucide/svelte/icons/plus";
-  import type { ConvertPayload, Reservation, ReservationFormState, RoomOption } from "./types";
+  import type { ConvertPayload, Reservation, ReservationFormState, RoomOption } from "../../lib/reservations/types";
 
   let reservations: Reservation[] = $state([]);
   let rooms: RoomOption[] = $state([]);
@@ -169,6 +170,7 @@
 <main>
   <header class="page-header with-action">
     <div>
+      <p class="eyebrow">Pipeline</p>
       <h1>Reservations</h1>
       <p class="subtitle">
         {activeReservations.length} active · {historyReservations.length} in history
@@ -227,7 +229,7 @@
   {/if}
 
   {#if loading}
-    <p class="muted">Loading reservations…</p>
+    <SkeletonList count={3} />
   {:else if view === "active"}
     {#if activeReservations.length === 0}
       <div class="card empty">

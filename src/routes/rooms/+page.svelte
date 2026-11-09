@@ -1,20 +1,21 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
-  import { getDb } from "$lib/db";
-  import { ROOM_STATUS_SQL } from "$lib/room-status";
-  import { getPaymentStatus } from "$lib/payment-status";
-  import { pushToast } from "$lib/toast.svelte";
-  import { insertReservation } from "$lib/reservations";
+  import { getDb } from "$lib/db/db";
+  import { ROOM_STATUS_SQL } from "$lib/rooms/room-status";
+  import { getPaymentStatus } from "$lib/tenants/payment-status";
+  import { pushToast } from "$lib/ui/toast.svelte";
+  import { insertReservation } from "$lib/reservations/reservations";
   import RoomFormModal from "./RoomFormModal.svelte";
   import RoomCard from "./RoomCard.svelte";
-  import RoomDetailSheet from "$lib/components/RoomDetailSheet.svelte";
-  import ConfirmModal from "$lib/components/ConfirmModal.svelte";
-  import Icon from "$lib/components/Icon.svelte";
+  import RoomDetailSheet from "$lib/rooms/room-sheet/RoomDetailSheet.svelte";
+  import ConfirmModal from "$lib/ui/ConfirmModal.svelte";
+  import SkeletonList from "$lib/ui/SkeletonList.svelte";
+  import Icon from "$lib/ui/Icon.svelte";
   import Plus from "@lucide/svelte/icons/plus";
   import ReservationFormModal from "../reservations/ReservationFormModal.svelte";
-  import type { ReservationFormState } from "../reservations/types";
-  import type { Room, RoomFilter, RoomFormState, RoomTenant, RoomTenantChip } from "./types";
+  import type { ReservationFormState } from "../../lib/reservations/types";
+  import type { Room, RoomFilter, RoomFormState, RoomTenant, RoomTenantChip } from "../../lib/rooms/types";
 
   const FILTERS: { key: RoomFilter; label: string }[] = [
     { key: "all", label: "All" },
@@ -230,7 +231,8 @@
 <main>
   <header class="page-header with-action">
     <div>
-      <h1>Room Management</h1>
+      <p class="eyebrow">Property</p>
+      <h1>Rooms</h1>
       <p class="subtitle">
         {#if statusFilter === "all"}
           {rooms.length} room{rooms.length === 1 ? "" : "s"} in total
@@ -296,7 +298,7 @@
   {/if}
 
   {#if loading}
-    <p class="muted">Loading rooms…</p>
+    <SkeletonList count={4} />
   {:else if rooms.length === 0}
     <div class="card empty">
       <p class="muted">No rooms yet.</p>
@@ -304,7 +306,7 @@
     </div>
   {:else if filteredRooms.length === 0}
     <div class="card empty">
-      <p class="muted">No rooms match this filter.</p>
+      <p class="muted">No rooms match this filter. Try All to see every room.</p>
     </div>
   {:else}
     <ul class="list-stack">

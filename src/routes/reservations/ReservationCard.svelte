@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { formatDate, phpPesoPrecise, roomLabel } from "$lib/format";
-  import type { Reservation } from "./types";
-  import Icon from "$lib/components/Icon.svelte";
+  import { formatDate, phpPesoPrecise, roomLabel } from "$lib/ui/format";
+  import type { Reservation } from "../../lib/reservations/types";
+  import Icon from "$lib/ui/Icon.svelte";
   import Phone from "@lucide/svelte/icons/phone";
   import BedDouble from "@lucide/svelte/icons/bed-double";
   import CalendarDays from "@lucide/svelte/icons/calendar-days";
@@ -142,6 +142,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 1.15rem;
+    letter-spacing: -0.02em;
   }
 
   /* ---- icon rows ---- */
@@ -166,22 +167,17 @@
     display: inline-flex;
     flex-shrink: 0;
   }
-  .icon-phone {
-    color: var(--red);
-  }
-  .icon-bed {
-    /* Image's purple — the app has no purple token, so this is the one
-       fixed-color exception (spec §4.1). */
-    color: #af52de;
-  }
-  .icon-cal {
+  /* One glyph colour for reference details; the accent is spent only on the
+     time-sensitive banner, so a card reads as one object instead of five
+     unrelated icons. */
+  .icon-phone,
+  .icon-bed,
+  .icon-cal,
+  .icon-bag {
     color: var(--label-3);
   }
-  .icon-bag {
-    color: var(--amber);
-  }
   .icon-clock {
-    color: var(--accent);
+    color: var(--accent-deep);
   }
 
   /* ---- section dividers ---- */
@@ -248,9 +244,9 @@
     gap: 8px;
     background: var(--accent-soft);
     color: var(--accent-deep);
-    border-radius: 10px;
-    padding: 8px 12px;
-    font-size: 0.9rem;
+    border-radius: var(--radius-control);
+    padding: 9px 12px;
+    font-size: 0.88rem;
     font-weight: 600;
   }
 

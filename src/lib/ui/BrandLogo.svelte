@@ -4,8 +4,8 @@
    *
    * The mark is the same SVG that produces the favicon and the OS app icons, so
    * the launcher icon and the in-app brand never drift apart. The wordmark is
-   * real text rather than the logo SVG's baked-in dark navy, which would vanish
-   * on the dark theme; this way it inherits the theme's label color.
+   * real text rather than the logo SVG's baked-in colors, which would vanish on
+   * the dark theme; this way it inherits the theme's ink.
    */
   let {
     size = 36,
@@ -38,9 +38,10 @@
   .mark {
     flex: 0 0 auto;
     display: block;
-    /* The SVG carries its own navy tile; matching the OS icon's corner ratio
-       keeps the in-app mark identical to the launcher icon. */
-    border-radius: 22%;
+    /* The SVG carries its own tile; matching the OS icon's corner ratio keeps
+       the in-app mark identical to the launcher icon. */
+    border-radius: 26%;
+    box-shadow: 0 5px 14px -8px rgba(12, 58, 64, 0.7);
   }
 
   .words {
@@ -51,18 +52,18 @@
 
   .name {
     font-size: 1.05rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1.15;
     color: var(--label);
   }
 
   .tagline {
-    margin-top: 1px;
-    font-size: 0.62rem;
-    font-weight: 600;
-    letter-spacing: 0.1em;
+    margin-top: 2px;
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--label-2);
+    color: var(--label-3);
   }
 </style>

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getThemePreference, setThemePreference, type ThemePreference } from "$lib/theme";
+  import { getThemePreference, setThemePreference, type ThemePreference } from "$lib/ui/theme";
 
   let {
     onError,
@@ -105,7 +105,7 @@
   }
 
   input.switch:checked {
-    background: var(--green);
+    background: var(--accent);
   }
   input.switch:checked::after {
     transform: translateX(20px);

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getSetting, setSetting } from "$lib/settings";
+  import { getSetting, setSetting } from "$lib/db/settings";
 
   let {
     onError,

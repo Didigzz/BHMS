@@ -1,6 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { getSetting, setSetting } from "./settings";
-import { isTauri } from "./db";
+import { getSetting, setSetting } from "../db/settings";
+import { isTauri } from "../db/db";
 
 /**
  * Manual theme override (Settings → Appearance).

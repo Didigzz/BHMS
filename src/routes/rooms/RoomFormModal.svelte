@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { modalMaterial } from "$lib/motion";
-  import { pushOverlay } from "$lib/back-stack";
-  import type { Room, RoomFormState } from "./types";
+  import { modalMaterial } from "$lib/ui/motion";
+  import { pushOverlay } from "$lib/ui/back-stack";
+  import type { Room, RoomFormState } from "../../lib/rooms/types";
 
   let {
     editing,
@@ -167,7 +167,7 @@
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     border: 1px solid var(--separator);
     padding: 10px 12px;
     font-size: 1rem;
@@ -203,7 +203,7 @@
     color: var(--label-2);
     background: var(--fill);
     border: 1px solid var(--separator);
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     padding: 8px 10px;
   }
 </style>

@@ -19,7 +19,7 @@
 
 import type Database from "@tauri-apps/plugin-sql";
 import { monthBounds } from "./earnings";
-import { addMonthsKey, formatMonthKey, formatShortDay } from "./format";
+import { addMonthsKey, formatMonthKey, formatShortDay } from "../ui/format";
 
 /* ------------------------------------------------------------------ *
  * Types

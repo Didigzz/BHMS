@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { modalMaterial } from "$lib/motion";
+  import { modalMaterial } from "$lib/ui/motion";
   import {
     chooseBackupFile,
     exportBackup,
@@ -8,14 +8,14 @@
     shareBackup,
     type BackupResult,
     type ChosenBackup,
-  } from "$lib/backup";
-  import { BACKUP_MESSAGES } from "$lib/backup-format";
-  import { getPlatformCapabilities, type PlatformCapabilities } from "$lib/platform";
-  import { getSetting } from "$lib/settings";
-  import { formatDate } from "$lib/format";
-  import { pushToast } from "$lib/toast.svelte";
-  import { pushOverlay } from "$lib/back-stack";
-  import Icon from "$lib/components/Icon.svelte";
+  } from "$lib/backup/backup";
+  import { BACKUP_MESSAGES } from "$lib/backup/backup-format";
+  import { getPlatformCapabilities, type PlatformCapabilities } from "$lib/ui/platform";
+  import { getSetting } from "$lib/db/settings";
+  import { formatDate } from "$lib/ui/format";
+  import { pushToast } from "$lib/ui/toast.svelte";
+  import { pushOverlay } from "$lib/ui/back-stack";
+  import Icon from "$lib/ui/Icon.svelte";
   import Upload from "@lucide/svelte/icons/upload";
   import Download from "@lucide/svelte/icons/download";
   import Share2 from "@lucide/svelte/icons/share-2";
@@ -310,7 +310,7 @@
   .backup-manifest {
     margin: 12px 0;
     padding: 10px 12px;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     background: var(--fill);
     display: flex;
     flex-direction: column;
@@ -346,7 +346,7 @@
   .reduction-list {
     margin: 0;
     padding: 8px 12px;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     background: var(--fill);
     list-style: none;
     display: flex;

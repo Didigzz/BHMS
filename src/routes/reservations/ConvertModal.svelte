@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { modalMaterial } from "$lib/motion";
-  import { phpPesoPrecise } from "$lib/format";
-  import { pushOverlay } from "$lib/back-stack";
-  import Icon from "$lib/components/Icon.svelte";
+  import { modalMaterial } from "$lib/ui/motion";
+  import { phpPesoPrecise } from "$lib/ui/format";
+  import { pushOverlay } from "$lib/ui/back-stack";
+  import Icon from "$lib/ui/Icon.svelte";
   import BedDouble from "@lucide/svelte/icons/bed-double";
   import HandCoins from "@lucide/svelte/icons/hand-coins";
-  import type { ConvertPayload, Reservation, RoomOption } from "./types";
+  import type { ConvertPayload, Reservation, RoomOption } from "../../lib/reservations/types";
 
   let {
     reservation,
@@ -215,7 +215,7 @@
   }
 
   .res-form input {
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     border: 1px solid var(--separator);
     padding: 10px 12px;
     font-size: 1rem;

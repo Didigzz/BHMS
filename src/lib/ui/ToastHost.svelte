@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { TransitionConfig } from "svelte/transition";
   // .svelte.ts modules are imported with the .svelte specifier (Svelte 5).
-  import { dismissToast, toasts } from "$lib/toast.svelte";
-  import Icon from "$lib/components/Icon.svelte";
+  import { dismissToast, toasts } from "$lib/ui/toast.svelte";
+  import Icon from "$lib/ui/Icon.svelte";
   import CircleCheck from "@lucide/svelte/icons/circle-check";
   import CircleX from "@lucide/svelte/icons/circle-x";
   import Info from "@lucide/svelte/icons/info";
@@ -65,7 +65,7 @@
     max-width: min(320px, 100%);
     width: max-content;
     border: 1px solid transparent;
-    border-radius: 12px;
+    border-radius: var(--radius-control);
     padding: 10px 16px;
     font-family: inherit;
     font-size: 0.88rem;
@@ -89,19 +89,19 @@
   .toast-success {
     color: var(--green-deep);
     background: var(--green-soft);
-    border-color: rgba(11, 110, 47, 0.2);
+    border-color: color-mix(in srgb, var(--green) 28%, transparent);
   }
 
   .toast-error {
     color: var(--red-deep);
     background: var(--red-soft);
-    border-color: rgba(215, 0, 21, 0.25);
+    border-color: color-mix(in srgb, var(--red) 28%, transparent);
   }
 
   .toast-info {
     color: var(--accent-deep);
     background: var(--accent-soft);
-    border-color: rgba(26, 92, 200, 0.2);
+    border-color: color-mix(in srgb, var(--accent) 24%, transparent);
   }
 
   /* Guarded by the :root data-theme override (src/lib/theme.ts) in addition

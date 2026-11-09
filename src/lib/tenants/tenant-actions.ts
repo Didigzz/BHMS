@@ -10,7 +10,7 @@
 
 import type Database from "@tauri-apps/plugin-sql";
 import { addMonths } from "./payment-status";
-import { addMonthsKey, monthKeyOf } from "./format";
+import { addMonthsKey, monthKeyOf } from "../ui/format";
 import { splitConsumption, validateApply } from "./held-balance";
 
 /** One payment row as written to the payments table (also the receipt row shape). */

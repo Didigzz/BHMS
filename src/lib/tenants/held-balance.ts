@@ -16,7 +16,7 @@
  */
 
 import { addMonths } from "./payment-status";
-import { phpPesoPrecise } from "./format";
+import { phpPesoPrecise } from "../ui/format";
 
 /** The two balance pots as stored on a tenant row. */
 export interface HeldPots {

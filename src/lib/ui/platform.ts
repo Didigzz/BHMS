@@ -10,7 +10,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { isTauri } from "./db";
+import { isTauri } from "../db/db";
 
 export interface PlatformCapabilities {
   /** Can a file be put somewhere the user can find it again? */

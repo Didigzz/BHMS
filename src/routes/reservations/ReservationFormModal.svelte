@@ -1,16 +1,16 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { modalMaterial } from "$lib/motion";
-  import { phpPeso } from "$lib/format";
-  import { pushOverlay } from "$lib/back-stack";
+  import { modalMaterial } from "$lib/ui/motion";
+  import { phpPeso } from "$lib/ui/format";
+  import { pushOverlay } from "$lib/ui/back-stack";
   import {
     capacityHint,
     holdOptionDisabled,
     remainingBeds,
     roomFitsHold,
     saveDisabledForCapacity,
-  } from "$lib/reservations";
-  import type { HoldType, ReservationFormState, RoomOption } from "./types";
+  } from "$lib/reservations/reservations";
+  import type { HoldType, ReservationFormState, RoomOption } from "../../lib/reservations/types";
 
   let {
     rooms,
@@ -314,7 +314,7 @@
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     border: 1px solid var(--separator);
     padding: 10px 12px;
     font-size: 1rem;
@@ -348,7 +348,7 @@
 
   .locked-room {
     box-sizing: border-box;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     border: 1px solid var(--separator);
     padding: 10px 12px;
     font-size: 0.95rem;

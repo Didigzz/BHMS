@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getSetting, setSetting } from "$lib/settings";
-  import { pushToast } from "$lib/toast.svelte";
+  import { getSetting, setSetting } from "$lib/db/settings";
+  import { pushToast } from "$lib/ui/toast.svelte";
 
   let {
     onError,
@@ -77,7 +77,7 @@
   .house-row input {
     flex: 1;
     min-width: 0;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     border: 1px solid var(--separator);
     padding: 10px 12px;
     font-size: 1rem;
