@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { getDb } from "$lib/db";
-  import { getSetting } from "$lib/settings";
-  import { currentMonthKey } from "$lib/earnings";
-  import { addMonthsKey, formatShortDay, phpPeso, roomLabel } from "$lib/format";
-  import { pushToast } from "$lib/toast.svelte";
+  import { getDb } from "$lib/db/db";
+  import { getSetting } from "$lib/db/settings";
+  import { currentMonthKey } from "$lib/reports/earnings";
+  import { addMonthsKey, phpPesoSigned } from "$lib/ui/format";
+  import { pushToast } from "$lib/ui/toast.svelte";
   import {
     atCurrentMonth,
     atCurrentYear,
@@ -17,9 +17,12 @@
     type ReportMode,
     type SalesReport,
     type SalesReportRaw,
-  } from "$lib/sales-report";
-  import { exportSalesReportPdf, generateSalesReportPdf } from "$lib/pdf-export";
-  import { getPlatformCapabilities, type PlatformCapabilities } from "$lib/platform";
+  } from "$lib/reports/sales-report";
+  import { exportSalesReportPdf, generateSalesReportPdf } from "$lib/reports/pdf-export";
+  import { getPlatformCapabilities, type PlatformCapabilities } from "$lib/ui/platform";
+  import SkeletonList from "$lib/ui/SkeletonList.svelte";
+  import SalesReportChart from "./SalesReportChart.svelte";
+  import SalesEventList from "./SalesEventList.svelte";
 
   // "As of" date for the period (stable for this page session).
   const today = todayIso();
@@ -83,11 +86,6 @@
   // ----- chart -----
   const maxBucket = $derived(report ? Math.max(1, ...report.buckets.map((b) => Math.abs(b.amount))) : 1);
 
-  /** ₱ with a proper minus sign for negative totals (spec shows −₱1,500). */
-  function phpPesoSigned(n: number): string {
-    return phpPeso(n).replace(/^-/, "−");
-  }
-
   // ----- export -----
   let exporting = $state(false);
   let pdfError: string | null = $state(null);
@@ -141,8 +139,9 @@
 <main>
   <header class="page-header">
     <div>
+      <p class="eyebrow">Reports</p>
       <div class="title-row">
-        <h1>Sales Report</h1>
+        <h1>Sales report</h1>
         {#if report?.period.containsToday}
           <span class="badge badge-reserved">as of today</span>
         {/if}
@@ -174,7 +173,7 @@
   </div>
 
   {#if loading}
-    <p class="muted">Loading report…</p>
+    <SkeletonList count={3} />
   {:else if report}
     {#if report.isEmpty}
       <div class="card empty">
@@ -184,23 +183,7 @@
       <!-- bar chart (hand-rolled: flex row, heights scale from the max bucket) -->
       <div class="card">
         <h2 class="section-title">Sales by {mode === "month" ? "week" : "month"}</h2>
-        <div class="chart">
-          {#each report.buckets as b (b.start)}
-            <div class="chart-col">
-              <div class="bar-wrap">
-                {#if b.amount !== 0}
-                  <span class="bar-value">{phpPesoSigned(b.amount)}</span>
-                {/if}
-                <div
-                  class="bar"
-                  class:bar-negative={b.amount < 0}
-                  style="height: {Math.max(2, Math.round((Math.abs(b.amount) / maxBucket) * 100))}%"
-                ></div>
-              </div>
-              <span class="bar-label">{b.label}</span>
-            </div>
-          {/each}
-        </div>
+        <SalesReportChart buckets={report.buckets} {maxBucket} />
       </div>
 
       <!-- net sales -->
@@ -212,35 +195,13 @@
       <!-- move-ins -->
       <div class="card">
         <h2 class="section-title">Move-ins</h2>
-        {#if report.moveIns.length === 0}
-          <p class="muted">No move-ins this period.</p>
-        {:else}
-          <ul class="event-list">
-            {#each report.moveIns as e (e.date + e.name)}
-              <li class="event-line">
-                <span class="event-tag event-in">Move-in</span>
-                <span>{e.name} — {formatShortDay(e.date)} · {roomLabel(e.room)} · {phpPeso(e.rate)}/mo</span>
-              </li>
-            {/each}
-          </ul>
-        {/if}
+        <SalesEventList events={report.moveIns} kind="in" />
       </div>
 
       <!-- move-outs -->
       <div class="card">
         <h2 class="section-title">Move-outs</h2>
-        {#if report.moveOuts.length === 0}
-          <p class="muted">No move-outs this period.</p>
-        {:else}
-          <ul class="event-list">
-            {#each report.moveOuts as e (e.date + e.name)}
-              <li class="event-line">
-                <span class="event-tag event-out">Move-out</span>
-                <span>{e.name} — {formatShortDay(e.date)} · {roomLabel(e.room)} · {phpPeso(e.rate)}/mo</span>
-              </li>
-            {/each}
-          </ul>
-        {/if}
+        <SalesEventList events={report.moveOuts} kind="out" />
       </div>
     {/if}
 
@@ -297,7 +258,7 @@
     border: 1px solid var(--separator);
     background: var(--card);
     color: var(--label);
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     width: 40px;
     height: 40px;
     font-size: 1rem;
@@ -334,105 +295,12 @@
     font-weight: 700;
   }
 
-  /* ---- chart ---- */
-  .chart {
-    display: flex;
-    align-items: flex-end;
-    gap: 6px;
-    height: 150px;
-    margin-top: var(--space-3);
-    padding-top: 18px; /* room for the value labels above the bars */
-  }
-
-  .chart-col {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    min-width: 0;
-    height: 100%;
-  }
-
-  .bar-wrap {
-    flex: 1;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    align-items: center;
-    min-height: 0;
-  }
-
-  .bar {
-    width: 60%;
-    max-width: 30px;
-    border-radius: 4px 4px 2px 2px;
-    background: var(--accent);
-    min-height: 2px; /* zero-bucket stub */
-  }
-
-  .bar-negative {
-    background: var(--red);
-  }
-
-  .bar-value {
-    font-size: 0.66rem;
-    color: var(--label-2);
-    margin-bottom: 3px;
-    white-space: nowrap;
-    transform: rotate(-25deg);
-    transform-origin: left bottom;
-  }
-
-  .bar-label {
-    font-size: 0.7rem;
-    color: var(--label-3);
-    margin-top: 6px;
-  }
-
   /* ---- sales total ---- */
   .sales-total {
-    font-size: 1.5rem;
-    font-weight: 800;
-    letter-spacing: -0.01em;
-  }
-
-  /* ---- move lists ---- */
-  .event-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .event-line {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    font-size: 0.92rem;
-  }
-
-  .event-tag {
-    font-size: 0.68rem;
+    font-size: 1.6rem;
     font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
-    border-radius: 999px;
-    padding: 2px 8px;
-    flex-shrink: 0;
-  }
-
-  .event-in {
-    color: var(--green-deep);
-    background: var(--green-soft);
-  }
-
-  .event-out {
-    color: var(--red-deep);
-    background: var(--red-soft);
+    letter-spacing: -0.035em;
+    font-variant-numeric: tabular-nums;
   }
 
   /* ---- occupancy ---- */
