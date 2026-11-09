@@ -155,30 +155,54 @@ npm run smoke:backup   # .digal round-trip: export → validate → rebuild → 
 node scripts/repair-migrations.mjs [db]  # re-sync _sqlx_migrations checksums with the current
                                     # migration files (fixes "migration N was previously applied
                                     # but has been modified" in place, keeps all data)
-node scripts/analyze-screenshot.mjs phone-verification/*.png   # pixel-profile device screenshots
+node scripts/analyze-screenshot.mjs <screenshot.png>  # pixel-profile a device screenshot
                                     # (locates content bands/tab bar, flags red error UI)
+npm run theme-wave     # regenerate the @keyframes theme-wipe-in block in src/app.css
 ```
 
 ## Project layout
 
 ```
 ├── src/                      # SvelteKit frontend (SPA, ssr = false)
-│   ├── lib/                  # db, backup, backup-format (.digal envelope/validation),
-│   │   │                     # settings, reminders, rooms, room-status, payment-status, amenity-billing,
-│   │   │                     # amenity-actions, format, motion (+ *.test.ts vitest suites)
-│   │   ├── browser/          # plugin mocks so the app also runs in a plain browser dev server
-│   │   └── components/       # shared ConfirmModal
+│   ├── app.css               # design-system entry: @imports the layers in src/styles/
+│   ├── styles/               # tokens, base, components, responsive (design system)
+│   ├── lib/
+│   │   ├── db/               # db.ts, db-health.ts, settings.ts
+│   │   ├── backup/           # backup.ts, backup-format.ts (public barrel) + format modules
+│   │   ├── tenants/          # actions/forms/filters, held balance, payment status, types,
+│   │   │                     # shared payment/move-out/receipt modals
+│   │   ├── rooms/            # rooms.ts, room-status.ts, bed-boxes.ts, room-sheet/
+│   │   ├── amenities/        # amenity-actions.ts (barrel), validation.ts, preview-fallback.ts
+│   │   ├── reports/          # sales-report.ts, earnings.ts, pdf-export.ts
+│   │   ├── reservations/     # reservations.ts, reminders.ts, types.ts
+│   │   ├── dashboard/        # dashboard cards/modal + view types
+│   │   ├── ui/               # dock, recovery screen, titlebar strip, toast, theme, format, icons
+│   │   └── browser/          # plugin mocks so the app also runs in a plain browser dev server
 │   └── routes/               # / (dashboard), rooms, tenants, reservations, amenities/billing, settings
 ├── src-tauri/                # Rust backend + Tauri shell
 │   ├── capabilities/         # permission grants (default.json)
 │   ├── gen/android/          # generated Android project (regenerate via tauri android init)
 │   ├── migrations/           # *.sql — single source of truth for the 75 migrations
 │   ├── src/                  # lib.rs (mod decls + run()), migrations.rs (include_str! ledger),
-│   │                         # migrations_repair.rs, media.rs, backup.rs, amenity.rs, db.rs
+│   │                         # migrations_repair.rs, media.rs, amenity.rs, db.rs,
+│   │                         # backup/ (mod, envelope, snapshot, install, safety, tests)
 │   └── tauri.conf.json       # identifier, build config, window settings
-├── scripts/                  # smoke-sql.mjs, smoke-backup.mjs, analyze-screenshot.mjs
-├── package.json              # npm scripts: dev, build, check, test, tauri
+├── scripts/                  # smoke-sql.mjs, smoke-backup.mjs, analyze-screenshot.mjs,
+│                             # gen-theme-wave.mjs, app-icons.mjs, repair-migrations.mjs
+├── docs/
+│   ├── apple-build.md        # iOS/macOS build notes
+│   ├── audits/               # structural audit reports
+│   ├── design/               # design mockups (billing, pill nav)
+│   └── specs/                # historical feature specifications
+├── .agents/skills/           # agent skill tooling (tracked on purpose; not app code)
+├── package.json              # npm scripts: dev, build, check, test, tauri, smoke:*, icons, theme-wave
 └── vite.config.js            # fixed port 1420, TAURI_DEV_HOST support
+```
+
+`src-tauri/migrations/` intentionally exceeds the usual files-per-folder guidance: it is an
+append-only chain of one-statement `.sql` files whose filename order **is** the version
+contract. Do not regroup it into subfolders — `migrations.rs` embeds each file with
+`include_str!` and `scripts/smoke-sql.mjs` drift-checks the two against each other.
 ```
 
 ## Backup & restore
